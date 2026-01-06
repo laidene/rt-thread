@@ -23,6 +23,8 @@
 #include <mmu.h>
 #endif
 
+
+
 static void rt_hw_timer2_isr(int vector, void *param)
 {
     rt_tick_increase();
@@ -64,6 +66,15 @@ void rt_hw_secondary_cpu_bsp_start(void)
     timer_init(0, 10000);
     rt_hw_interrupt_install(IRQ_PBA8_TIMER0_1, rt_hw_timer2_isr, RT_NULL, "tick");
     rt_hw_interrupt_umask(IRQ_PBA8_TIMER0_1);
+    
+    // rt_kprintf("rt_hw_secondary_cpu_bsp_start cpu_id=%d\n", rt_hw_cpu_id());
+
+    /* Send SGI 1 to CPU 0:
+     * - filter_list = 0 (0b00): Use CPUTargetList to specify target CPUs
+     * - target_list = 1 (bit 0 = 1): Send to CPU 0
+     */
+    arm_gic_send_sgi(0, 1, 1, 0);
+
     rt_system_scheduler_start();
 }
 

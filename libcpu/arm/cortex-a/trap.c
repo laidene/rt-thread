@@ -342,8 +342,14 @@ void rt_hw_trap_irq(void)
     extern struct rt_irq_desc isr_table[];
 
     ir = rt_hw_interrupt_get_irq();
-
+    int cpuid = ( ir >> 10 ) & 0x7;
+    if(cpuid != 0) {
+        rt_kprintf("[cpuid] cpuid: %d\n", cpuid);
+    }
     ir_real = ir & 0x3ff;
+    if(ir_real == 1) {
+        rt_kprintf("[cpuid] cpuid: %d\n", cpuid);
+    }
     if (ir == 1023)
     {
         /* Spurious interrupt */

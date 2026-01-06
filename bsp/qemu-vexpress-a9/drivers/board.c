@@ -59,6 +59,12 @@ rt_region_t init_page_region = {
 };
 #endif
 
+
+static void xxx_isr(int irqno, void *param)
+{
+    rt_kprintf("xxx_isr irqno=%d param=%p\n", irqno, param);
+}
+
 void rt_hw_board_init(void)
 {
 #ifdef RT_USING_SMART
@@ -91,6 +97,7 @@ void rt_hw_board_init(void)
 #ifdef RT_USING_SMP
     /* install IPI handle */
     rt_hw_ipi_handler_install(RT_SCHEDULE_IPI, rt_scheduler_ipi_handler);
+    rt_hw_interrupt_install(1, xxx_isr, 0x123, "my_tets");
 #endif
 }
 
