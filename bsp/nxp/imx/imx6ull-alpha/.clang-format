@@ -1,0 +1,81 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+
+ColumnLimit: 120
+MaxEmptyLinesToKeep: 5
+
+##
+##
+##
+
+AccessModifierOffset: -4
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentPPDirectives: BeforeHash
+IndentCaseLabels: false
+BreakBeforeBraces: Custom
+
+
+
+##
+## Align Style
+##
+DerivePointerAlignment: false
+PointerAlignment: Left
+AlignConsecutiveBitFields:
+  Enabled: true
+  AcrossEmptyLines: true
+  AcrossComments: false
+AlignEscapedNewlines: Left
+AlignTrailingComments:
+    Kind: Always
+    OverEmptyLines: 0
+AlignConsecutiveMacros:
+    Enabled: true
+    AcrossEmptyLines: true
+    AcrossComments: false
+
+##
+## SingleLine Style
+##
+PackConstructorInitializers: Never
+BreakConstructorInitializers: BeforeColon
+BreakTemplateDeclarations: Yes
+AllowShortLambdasOnASingleLine: None
+AllowShortBlocksOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+BinPackArguments: false
+BinPackParameters: OnePerLine
+
+Cpp11BracedListStyle: false
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: true
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+
+##
+## Others
+##
+SortIncludes: Never
+Standard: c++14
+---
