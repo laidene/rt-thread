@@ -4,6 +4,8 @@
 
 #include <rtthread.h>
 #include <armv8.h>
+#include <cpu.h>
+#include <cpuport.h>
 #include <hypercall.h>
 
 #define HYP_CUSTOM_TEST_VALUE          0x48564321
@@ -29,7 +31,7 @@ static int hyp(int argc, char **argv)
     {
         rt_uint32_t ret;
 
-        ret = rt_hw_hypercall(HYPERCALL_START + 1,
+        ret = rt_hw_hypercall(HYPERCALL_DEBUG,
                 0x12345678, 1, 2, 3, 4, 5, 6);
         rt_kprintf("custom hvc call: ret=0x%08x\n", ret);
 
@@ -41,3 +43,18 @@ static int hyp(int argc, char **argv)
     return -RT_ERROR;
 }
 MSH_CMD_EXPORT(hyp, minimal hypervisor probes);
+
+static int mpidr(int argc, char **argv)
+{
+    rt_uint64_t mpidr;
+
+    RT_UNUSED(argc);
+    RT_UNUSED(argv);
+
+    rt_hw_sysreg_read(mpidr_el1, mpidr);
+    rt_kprintf("mpidr=0x%lx affinity=0x%lx\n",
+            mpidr, mpidr & MPIDR_AFFINITY_MASK);
+
+    return RT_EOK;
+}
+MSH_CMD_EXPORT(mpidr, show current cpu mpidr);

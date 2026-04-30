@@ -16,11 +16,14 @@
 
 #include <cpu.h>
 #include <cpuport.h>
+#include <hypercall.h>
 #include <psci.h>
 
 static int psci_cpu_boot(rt_uint32_t cpuid, rt_uint64_t entry)
 {
-    return rt_psci_cpu_on(cpuid, entry);
+    rt_uint64_t mpidr = rt_cpu_mpidr_table[cpuid] & MPIDR_AFFINITY_MASK;
+
+    return rt_hv_cpu_on(mpidr, entry, 0);
 }
 
 static void psci_cpu_shutdown(void)

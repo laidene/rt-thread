@@ -11,8 +11,10 @@
 
 #define HYPERCALL_VERSION_ID           0xc5000000
 #define HYPERCALL_DEBUG_ID             0xc5000001
+#define HYPERCALL_CPU_ON_ID            0xc5000003
 #define HYP_VERSION_0_1                0x00010000
 #define HYP_CUSTOM_TEST_VALUE          0x48564321
+#define PSCI_RET_NOT_SUPPORTED         -1
 
 .text
 .align 11
@@ -76,6 +78,11 @@ hyp_sync_lower_aarch64:
     cmp     w0, w16
     b.eq    hyp_hvc_custom_test
 
+    movz    w16, #(HYPERCALL_CPU_ON_ID >> 16), lsl #16
+    add     w16, w16, #(HYPERCALL_CPU_ON_ID & 0xffff)
+    cmp     w0, w16
+    b.eq    hyp_hvc_cpu_on
+
     b       hyp_hvc_not_supported
 
 hyp_hvc_version:
@@ -88,6 +95,14 @@ hyp_hvc_version:
 hyp_hvc_custom_test:
     movz    w0, #(HYP_CUSTOM_TEST_VALUE >> 16), lsl #16
     movk    w0, #(HYP_CUSTOM_TEST_VALUE & 0xffff)
+    mov     x1, xzr
+    mov     x2, xzr
+    mov     x3, xzr
+    eret
+
+.global hyp_hvc_cpu_on
+hyp_hvc_cpu_on:
+    mov     x0, #PSCI_RET_NOT_SUPPORTED
     mov     x1, xzr
     mov     x2, xzr
     mov     x3, xzr
