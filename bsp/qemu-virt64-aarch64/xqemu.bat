@@ -5,7 +5,7 @@ qemu-img create -f raw sd.bin 64M
 
 :run
 qemu-system-aarch64 ^
--M virt,gic-version=2,virtualization=on ^
+-M virt,gic-version=2,virtualization=on,secure=on ^
 -cpu cortex-a53 ^
 -m 256M ^
 -smp 4 ^
@@ -20,4 +20,4 @@ qemu-system-aarch64 ^
 -device virtio-net-device,netdev=net0,bus=virtio-mmio-bus.1 ^
 -device virtio-serial-device ^
 -chardev socket,host=127.0.0.1,port=4321,server=on,wait=off,telnet=on,id=console0 ^
--device virtserialport,chardev=console0
+-device virtserialport,chardev=console0 -S -s

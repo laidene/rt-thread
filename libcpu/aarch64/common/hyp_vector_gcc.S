@@ -14,7 +14,7 @@
 #define HYPERCALL_CPU_ON_ID            0xc5000003
 #define HYP_VERSION_0_1                0x00010000
 #define HYP_CUSTOM_TEST_VALUE          0x48564321
-#define PSCI_RET_NOT_SUPPORTED         -1
+#define PSCI_0_2_FN64_CPU_ON           0xc4000003
 
 .text
 .align 11
@@ -102,7 +102,16 @@ hyp_hvc_custom_test:
 
 .global hyp_hvc_cpu_on
 hyp_hvc_cpu_on:
-    mov     x0, #PSCI_RET_NOT_SUPPORTED
+    /*
+     * x1 = target MPIDR
+     * x2 = entry point
+     * x3 = context_id
+     */
+    movz    w0, #(PSCI_0_2_FN64_CPU_ON >> 16), lsl #16
+    add     w0, w0, #(PSCI_0_2_FN64_CPU_ON & 0xffff)
+    smc     #0
+
+    /* x0 keeps the PSCI return value */
     mov     x1, xzr
     mov     x2, xzr
     mov     x3, xzr
