@@ -206,6 +206,15 @@ init_cpu_el:
     bne     .init_cpu_sys
 
 .init_cpu_hyp:
+    get_phy x1, hyp_vectors
+    mrs     x0, vbar_el2
+    cmp     x0, x1
+    beq     .init_cpu_hyp_vector_ready
+
+    msr     vbar_el2, x1
+    isb
+
+.init_cpu_hyp_vector_ready:
     /* Enable CNTP for EL1 */
     mrs     x0, cnthctl_el2         /* Counter-timer Hypervisor Control register */
     orr     x0, x0, #(1 << 0)       /* Don't traps NS EL0/1 accesses to the physical counter */

@@ -1,0 +1,43 @@
+/*
+ * Minimal hypervisor bring-up probes.
+ */
+
+#include <rtthread.h>
+#include <armv8.h>
+#include <hypercall.h>
+
+#define HYP_CUSTOM_TEST_VALUE          0x48564321
+
+static int hyp(int argc, char **argv)
+{
+    if (argc < 2 || !rt_strcmp(argv[1], "el"))
+    {
+        rt_kprintf("current EL: EL%lu\n", rt_hw_get_current_el());
+        return RT_EOK;
+    }
+
+    if (!rt_strcmp(argv[1], "hvc"))
+    {
+        rt_uint32_t version = 0;
+        rt_err_t err = rt_hv_version(&version);
+
+        rt_kprintf("hvc version call: err=%d version=0x%08x\n", err, version);
+        return err;
+    }
+
+    if (!rt_strcmp(argv[1], "custom"))
+    {
+        rt_uint32_t ret;
+
+        ret = rt_hw_hypercall(HYPERCALL_START + 1,
+                0x12345678, 1, 2, 3, 4, 5, 6);
+        rt_kprintf("custom hvc call: ret=0x%08x\n", ret);
+
+        return ret == HYP_CUSTOM_TEST_VALUE ? RT_EOK : -RT_ERROR;
+    }
+
+    rt_kprintf("Usage: hyp el | hvc | custom\n");
+
+    return -RT_ERROR;
+}
+MSH_CMD_EXPORT(hyp, minimal hypervisor probes);
