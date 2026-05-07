@@ -206,6 +206,9 @@ init_cpu_el:
     bne     .init_cpu_sys
 
 .init_cpu_hyp:
+    msr     spsel, #1
+    mov     sp, stack_top
+
     get_phy x1, hyp_vectors
     mrs     x0, vbar_el2
     cmp     x0, x1
