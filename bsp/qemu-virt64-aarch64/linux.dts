@@ -29,10 +29,17 @@
         compatible = "virtio,mmio";
     };
 
+    virtio_mmio@a000200 {
+        dma-coherent;
+        interrupts = <0x00 0x11 0x01>;
+        reg = <0x00 0xa000200 0x00 0x200>;
+        compatible = "virtio,mmio";
+    };
+
     intc: intc@8000000 {
         phandle = <0x8005>;
         interrupts = <0x01 0x09 0x04>;
-        reg = <0x00 0x8000000 0x00 0x10000 0x00 0x8010000 0x00 0x10000 0x00 0x8030000 0x00 0x10000 0x00 0x8040000 0x00 0x10000>;
+        reg = <0x00 0x8000000 0x00 0x10000 0x00 0x8010000 0x00 0x10000>;
         compatible = "arm,cortex-a15-gic";
         ranges;
         #size-cells = <0x02>;
@@ -69,6 +76,6 @@
     };
 
     chosen {
-        bootargs = "console=hvc0 maxcpus=1 nr_cpus=1 loglevel=8";
+        bootargs = "console=hvc0 maxcpus=1 nr_cpus=1 loglevel=8 root=/dev/vda rw rootwait";
     };
 };
