@@ -10,6 +10,10 @@
 
 #define HYP_CUSTOM_TEST_VALUE          0x48564321
 
+extern rt_uint64_t hyp_gicd_write_trap_count;
+extern rt_uint64_t hyp_last_gicd_write_ipa;
+extern rt_uint64_t hyp_last_gicd_write_esr;
+
 static int hyp(int argc, char **argv)
 {
     if (argc < 2 || !rt_strcmp(argv[1], "el"))
@@ -38,7 +42,16 @@ static int hyp(int argc, char **argv)
         return ret == HYP_CUSTOM_TEST_VALUE ? RT_EOK : -RT_ERROR;
     }
 
-    rt_kprintf("Usage: hyp el | hvc | custom\n");
+    if (!rt_strcmp(argv[1], "gicd"))
+    {
+        rt_kprintf("gicd trap count=%lu last_ipa=0x%lx last_esr=0x%lx\n",
+                hyp_gicd_write_trap_count,
+                hyp_last_gicd_write_ipa,
+                hyp_last_gicd_write_esr);
+        return RT_EOK;
+    }
+
+    rt_kprintf("Usage: hyp el | hvc | custom | gicd\n");
 
     return -RT_ERROR;
 }

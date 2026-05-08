@@ -27,6 +27,7 @@
 #define S2_TABLE_DESC           0x3
 #define S2_BLOCK_NORMAL_RW      0x7fd
 #define S2_BLOCK_DEVICE_RW      0x4c1
+#define S2_PAGE_DEVICE_RO       0x443
 #define S2_PAGE_DEVICE_RW       0x4c3
 
 
@@ -58,6 +59,7 @@ linux_cpu3_trampoline:
     msr     cntvoff_el2, xzr
 
     bl      linux_stage2_setup
+    bl      linux_gic_prepare
 
     movz    x5, #(HCR_EL2_RW >> 16), lsl #16
     orr     x5, x5, #HCR_EL2_SWIO
@@ -100,30 +102,34 @@ linux_stage2_setup:
     ldr     x8, =linux_stage2_l2_high
     ldr     x9, =linux_stage2_l3_gic
 
-    orr     x10, x7, #S2_TABLE_DESC
-    str     x10, [x6, #0]
-    orr     x10, x8, #S2_TABLE_DESC
-    str     x10, [x6, #8]
+    /* linux_stage2_l1[0] = linux_stage2_l2_low  | S2_TABLE_DESC */
+    /* linux_stage2_l1[1] = linux_stage2_l2_high | S2_TABLE_DESC */
+    orr     x10, x7, #S2_TABLE_DESC     /* x10 = x7 | S2_TABLE_DESC */
+    str     x10, [x6, #0]               /* *(uint64_t *)(x6 + 0) = x10 */
+    orr     x10, x8, #S2_TABLE_DESC     /* x10 = x8 | S2_TABLE_DESC */
+    str     x10, [x6, #8]               /* *(uint64_t *)(x6 + 8) = x10 */
 
+    /* linux_stage2_l2_low[64] = linux_stage2_l3_gic | S2_TABLE_DESC */
+    /* 0x08000000 / 0x200000 = 64 */
     orr     x10, x9, #S2_TABLE_DESC
     str     x10, [x7, #(64 * 8)]
 
-    ldr     x10, =VIRTIO_MMIO_BASE
-    lsr     x11, x10, #21
-    and     x11, x11, #0x1ff
+    ldr     x10, =VIRTIO_MMIO_BASE  /* x10 = 0x0a000000 */
+    lsr     x11, x10, #21           /* x11 = 0x0a000000 >> 21 = 00x50 相当于除以 2MB */
+    and     x11, x11, #0x1ff        /* 是只取低 9 位，因为一张页表有 512 项 */
     movz    x12, #S2_BLOCK_DEVICE_RW
-    orr     x13, x10, x12
-    str     x13, [x7, x11, lsl #3]
+    orr     x13, x10, x12           /* x13 = 0x0a000000 | S2_BLOCK_DEVICE_RW */
+    str     x13, [x7, x11, lsl #3]  /* linux_stage2_l2_low[0x50] = 0x0a000000 | S2_BLOCK_DEVICE_RW; */
 
-    ldr     x10, =LINUX_RAM_BASE
-    mov     x11, #LINUX_RAM_2M_BLOCKS
+    ldr     x10, =LINUX_RAM_BASE        /* linux的可用内存起始地址 */
+    mov     x11, #LINUX_RAM_2M_BLOCKS   /* 可用地址大小(单位2M) */
     movz    x12, #S2_BLOCK_NORMAL_RW
 
 .linux_stage2_map_ram:
-    lsr     x13, x10, #21
-    and     x13, x13, #0x1ff
-    orr     x14, x10, x12
-    str     x14, [x8, x13, lsl #3]
+    lsr     x13, x10, #21               /* x13 = x10 >> 21 = LINUX_RAM_BASE / 2M  */
+    and     x13, x13, #0x1ff            /* 512个表项 */
+    orr     x14, x10, x12               /* x14 = LINUX_RAM_BASE | S2_BLOCK_NORMAL_RW  */
+    str     x14, [x8, x13, lsl #3]      /* linux_stage2_l2_high[x13] = x14 */
     add     x10, x10, #0x200000
     subs    x11, x11, #1
     b.ne    .linux_stage2_map_ram
@@ -135,7 +141,7 @@ linux_stage2_setup:
      */
     ldr     x10, =GICD_BASE
     mov     x11, #16
-    movz    x12, #S2_PAGE_DEVICE_RW     /* 如果设置为只读权限就会被stage-2拦截 */
+    movz    x12, #S2_PAGE_DEVICE_RO     /* 如果设置为只读权限就会被stage-2拦截 */
 
 .linux_stage2_map_gicd:
     lsr     x13, x10, #12
@@ -195,9 +201,38 @@ linux_stage2_setup:
     isb
     ret
 
+linux_gic_prepare:
+    ldr     x10, =GICD_BASE
+
+    /* Linux CPU3 timers: PPI 10/11/13/14 */
+    movz    w11, #0x6c00, lsl #16
+    str     w11, [x10, #0x100]
+
+    /* Linux virtio interrupts: SPI 48/49 -> CPU3 */
+    movz    w11, #0x0808
+    str     w11, [x10, #0x830]
+
+    /* SPI 48/49 edge-triggered */
+    mov     w11, #0x0000000a
+    str     w11, [x10, #0xc0c]
+
+    /* Enable SPI 48/49 */
+    movz    w11, #0x3, lsl #16
+    str     w11, [x10, #0x104]
+    ret
+
     .global linux_cpu3_trampoline_end
 linux_cpu3_trampoline_end:
 
+/*L1
+    ├─ L1[0] -> L2_low
+    │          ├─ 普通 2MB block 映射
+    │          └─ L2_low[64] -> L3_gic
+    └─ L1[1] -> L2_high
+            └─ 普通 2MB block 映射
+*/
+
+    /* Stage-2 页表页 */
     .section ".bss.noclean.linux_hyp", "aw"
     .align 12
 linux_stage2_l1:
