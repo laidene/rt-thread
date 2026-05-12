@@ -1,5 +1,9 @@
 /*
  * Trampoline for booting a Linux Image on a reserved CPU.
+ *
+ * Keep this file small: C code owns the stage-2 tables and GIC setup,
+ * while assembly only handles the EL2 entry/exit sequence.
+ * 设置 EL2 栈、vbar_el2、调用 C 初始化、最后 eret 进 Linux
  */
 
 #ifndef __ASSEMBLY__
@@ -8,31 +12,8 @@
 
 #define LINUX_IMAGE_ENTRY       0x48200000
 #define LINUX_DTB_ADDRESS       0x4f000000
-#define LINUX_RAM_BASE          0x48000000
-#define LINUX_RAM_2M_BLOCKS     64
-#define VIRTIO_MMIO_BASE        0x0a000000
-#define GIC_2M_BASE             0x08000000
-#define GICD_BASE               0x08000000
-#define GICC_BASE               0x08010000
-#define GICH_BASE               0x08030000
-#define HCR_EL2_RW              (1 << 31)
-#define HCR_EL2_SWIO            (1 << 1)
-#define HCR_EL2_VM              (1 << 0)
 #define SPSR_EL1H_DAIF          0x3c5
-#define VTCR_EL2_RES1           (1 << 31)
-#define VTCR_EL2_SL0_LVL1       (1 << 6)
-#define VTCR_EL2_IRGN0_WBWA     (1 << 8)
-#define VTCR_EL2_ORGN0_WBWA     (1 << 10)
-#define VTCR_EL2_SH0_INNER      (3 << 12)
-#define S2_TABLE_DESC           0x3
-#define S2_BLOCK_NORMAL_RW      0x7fd
-#define S2_BLOCK_DEVICE_RW      0x4c1
-#define S2_PAGE_DEVICE_RO       0x443
-#define S2_PAGE_DEVICE_RW       0x4c3
 
-
-
-/* linux的启动入口,先搭建stage-2 */
     .section ".text.linux_trampoline", "ax"
     .align 6
     .global linux_cpu3_trampoline
@@ -53,18 +34,7 @@ linux_cpu3_trampoline:
     msr     vbar_el2, x5            /* EL2 异常有入口 */
     isb
 
-    mrs     x5, cnthctl_el2
-    orr     x5, x5, #0x3
-    msr     cnthctl_el2, x5         /* 放开 EL1 访问物理计时器 */
-    msr     cntvoff_el2, xzr
-
-    bl      linux_stage2_setup
-    bl      linux_gic_prepare
-
-    movz    x5, #(HCR_EL2_RW >> 16), lsl #16
-    orr     x5, x5, #HCR_EL2_SWIO
-    orr     x5, x5, #HCR_EL2_VM
-    msr     hcr_el2, x5             /* 再写 HCR_EL2 打开虚拟化翻译 */
+    bl      linux_el2_prepare
 
     mov     x5, #SPSR_EL1H_DAIF
     msr     spsr_el2, x5
@@ -85,164 +55,13 @@ linux_cpu3_trampoline:
     ldr     x4, =LINUX_IMAGE_ENTRY
     br      x4
 
-/* 真正建 Stage-2 */
-/* 4 块内存缓冲区，运行时被手工填成 Stage-2 页表 */
-linux_stage2_setup:
-    ldr     x6, =linux_stage2_l1
-    mov     x7, x6
-    mov     x8, #0x4000
-
-.linux_stage2_clear:
-    str     xzr, [x7], #8
-    subs    x8, x8, #8
-    b.ne    .linux_stage2_clear
-
-    ldr     x6, =linux_stage2_l1
-    ldr     x7, =linux_stage2_l2_low
-    ldr     x8, =linux_stage2_l2_high
-    ldr     x9, =linux_stage2_l3_gic
-
-    /* linux_stage2_l1[0] = linux_stage2_l2_low  | S2_TABLE_DESC */
-    /* linux_stage2_l1[1] = linux_stage2_l2_high | S2_TABLE_DESC */
-    orr     x10, x7, #S2_TABLE_DESC     /* x10 = x7 | S2_TABLE_DESC */
-    str     x10, [x6, #0]               /* *(uint64_t *)(x6 + 0) = x10 */
-    orr     x10, x8, #S2_TABLE_DESC     /* x10 = x8 | S2_TABLE_DESC */
-    str     x10, [x6, #8]               /* *(uint64_t *)(x6 + 8) = x10 */
-
-    /* linux_stage2_l2_low[64] = linux_stage2_l3_gic | S2_TABLE_DESC */
-    /* 0x08000000 / 0x200000 = 64 */
-    orr     x10, x9, #S2_TABLE_DESC
-    str     x10, [x7, #(64 * 8)]
-
-    ldr     x10, =VIRTIO_MMIO_BASE  /* x10 = 0x0a000000 */
-    lsr     x11, x10, #21           /* x11 = 0x0a000000 >> 21 = 00x50 相当于除以 2MB */
-    and     x11, x11, #0x1ff        /* 是只取低 9 位，因为一张页表有 512 项 */
-    movz    x12, #S2_BLOCK_DEVICE_RW
-    orr     x13, x10, x12           /* x13 = 0x0a000000 | S2_BLOCK_DEVICE_RW */
-    str     x13, [x7, x11, lsl #3]  /* linux_stage2_l2_low[0x50] = 0x0a000000 | S2_BLOCK_DEVICE_RW; */
-
-    ldr     x10, =LINUX_RAM_BASE        /* linux的可用内存起始地址 */
-    mov     x11, #LINUX_RAM_2M_BLOCKS   /* 可用地址大小(单位2M) */
-    movz    x12, #S2_BLOCK_NORMAL_RW
-
-.linux_stage2_map_ram:
-    lsr     x13, x10, #21               /* x13 = x10 >> 21 = LINUX_RAM_BASE / 2M  */
-    and     x13, x13, #0x1ff            /* 512个表项 */
-    orr     x14, x10, x12               /* x14 = LINUX_RAM_BASE | S2_BLOCK_NORMAL_RW  */
-    str     x14, [x8, x13, lsl #3]      /* linux_stage2_l2_high[x13] = x14 */
-    add     x10, x10, #0x200000
-    subs    x11, x11, #1
-    b.ne    .linux_stage2_map_ram
-
-    /*
-     * Keep GICD writable for now so Linux can finish its early interrupt
-     * controller bring-up.  Once console output is stable again we can
-     * re-introduce finer-grained GICD trapping incrementally.
-     */
-    ldr     x10, =GICD_BASE
-    mov     x11, #16
-    movz    x12, #S2_PAGE_DEVICE_RO     /* 如果设置为只读权限就会被stage-2拦截 */
-
-.linux_stage2_map_gicd:
-    lsr     x13, x10, #12
-    and     x13, x13, #0x1ff
-    orr     x14, x10, x12
-    str     x14, [x9, x13, lsl #3]
-    add     x10, x10, #0x1000
-    subs    x11, x11, #1
-    b.ne    .linux_stage2_map_gicd
-
-    ldr     x10, =GICC_BASE
-    mov     x11, #16
-    movz    x12, #S2_PAGE_DEVICE_RW
-
-.linux_stage2_map_gicc:
-    lsr     x13, x10, #12
-    and     x13, x13, #0x1ff
-    orr     x14, x10, x12
-    str     x14, [x9, x13, lsl #3]
-    add     x10, x10, #0x1000
-    subs    x11, x11, #1
-    b.ne    .linux_stage2_map_gicc
-
-    ldr     x10, =GICH_BASE
-    mov     x11, #32
-    movz    x12, #S2_PAGE_DEVICE_RW
-
-.linux_stage2_map_gich_gicv:
-    lsr     x13, x10, #12
-    and     x13, x13, #0x1ff
-    orr     x14, x10, x12
-    str     x14, [x9, x13, lsl #3]
-    add     x10, x10, #0x1000
-    subs    x11, x11, #1
-    b.ne    .linux_stage2_map_gich_gicv
-
-    ldr     x6, =linux_stage2_l1
-    movz    x7, #1, lsl #48
-    orr     x6, x6, x7
-    msr     vttbr_el2, x6
-
-    mrs     x7, id_aa64mmfr0_el1
-    and     x7, x7, #0xf
-    lsl     x7, x7, #16
-    movz    x6, #(VTCR_EL2_RES1 >> 16), lsl #16
-    orr     x6, x6, #32
-    orr     x6, x6, #VTCR_EL2_SL0_LVL1
-    orr     x6, x6, #VTCR_EL2_IRGN0_WBWA
-    orr     x6, x6, #VTCR_EL2_ORGN0_WBWA
-    orr     x6, x6, #VTCR_EL2_SH0_INNER
-    orr     x6, x6, x7
-    msr     vtcr_el2, x6
-
-    dsb     sy
-    tlbi    vmalls12e1
-    dsb     sy
-    isb
-    ret
-
-linux_gic_prepare:
-    ldr     x10, =GICD_BASE
-
-    /* Linux CPU3 timers: PPI 10/11/13/14 */
-    movz    w11, #0x6c00, lsl #16
-    str     w11, [x10, #0x100]
-
-    /* Linux virtio interrupts: SPI 48/49 -> CPU3 */
-    movz    w11, #0x0808
-    str     w11, [x10, #0x830]
-
-    /* SPI 48/49 edge-triggered */
-    mov     w11, #0x0000000a
-    str     w11, [x10, #0xc0c]
-
-    /* Enable SPI 48/49 */
-    movz    w11, #0x3, lsl #16
-    str     w11, [x10, #0x104]
-    ret
+    .ltorg
 
     .global linux_cpu3_trampoline_end
 linux_cpu3_trampoline_end:
 
-/*L1
-    ├─ L1[0] -> L2_low
-    │          ├─ 普通 2MB block 映射
-    │          └─ L2_low[64] -> L3_gic
-    └─ L1[1] -> L2_high
-            └─ 普通 2MB block 映射
-*/
-
-    /* Stage-2 页表页 */
     .section ".bss.noclean.linux_hyp", "aw"
     .align 12
-linux_stage2_l1:
-    .space 4096
-linux_stage2_l2_low:
-    .space 4096
-linux_stage2_l2_high:
-    .space 4096
-linux_stage2_l3_gic:
-    .space 4096
 linux_cpu3_hyp_stack:
     .space 4096
 linux_cpu3_hyp_stack_top:

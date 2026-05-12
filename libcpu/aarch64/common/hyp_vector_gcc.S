@@ -1,162 +1,184 @@
 /*
- * Minimal EL2 vector for QEMU virt64 hypervisor bring-up.
+ * qemu virt64 最小 el2 异常向量。
+ *
+ * 本文件负责：
+ * - 接管 更低级的 el aarch64 同步异常；
+ * - 处理 rt-thread 自定义 hvc 和 linux psci hvc 代理；
+ * - 记录并丢弃 linux 对 gicd shadow 区域触发的写访问异常。
+ *
+ * 这里尽量只保留入口、现场保存和最小分发逻辑；gic 虚拟化策略
+ * 放在 hyp_gic.c 中实现。
  */
 
-#ifndef __ASSEMBLY__
-#define __ASSEMBLY__
-#endif
+/* ec类型 */
+#define esr_el2_ec_shift                26
+#define esr_el2_ec_type_hvc64           0x16
+#define esr_el2_ec_type_dabt_low        0x24
 
-#define ESR_EL2_EC_SHIFT               26
-#define ESR_EL2_EC_HVC64               0x16
-#define ESR_EL2_EC_DABT_LOW            0x24
-#define ESR_EL2_DABT_WNR               (1 << 6)
+/* 自定义的hvc funciton id */
+#define hypercall_version_id            0xc5000000
+#define hypercall_debug_id              0xc5000001
+#define hypercall_cpu_on_id             0xc5000003
 
-#define HYPERCALL_VERSION_ID           0xc5000000
-#define HYPERCALL_DEBUG_ID             0xc5000001
-#define HYPERCALL_CPU_ON_ID            0xc5000003
-#define HYP_VERSION_0_1                0x00010000
-#define HYP_CUSTOM_TEST_VALUE          0x48564321
-#define PSCI_0_2_FN64_CPU_ON           0xc4000003
-#define PSCI_32_PREFIX                 0x84
-#define PSCI_64_PREFIX                 0xc4
-#define GICD_BASE                      0x08000000
-#define GICD_END                       0x08010000
+/* 自定义测试返回值 */
+#define hyp_version_0_1                 0x00010000
+#define hyp_custom_test_value           0x48564321
+
+/* 标准的psci hvc/smc funcrion id */
+#define psci_0_2_fn64_cpu_on            0xc4000003
+
+/* PSCI 的 function id 编码里 最高8位区别SMC32/HVC32 风格调用 还是 SMC64/HVC64 风格调用  */
+#define psci_32_prefix                  0x84
+#define psci_64_prefix                  0xc4
+
+.macro vector_slot offset, target
+    .org (hyp_vbar + \offset)
+    b \target
+.endm
+
+.macro eret_zero_x1_x3
+    mov     x1, xzr
+    mov     x2, xzr
+    mov     x3, xzr
+    eret
+.endm
+
+.macro guest_save_regs
+    sub     sp, sp, #256
+    stp     x0, x1, [sp, #0]
+    stp     x2, x3, [sp, #16]
+    stp     x4, x5, [sp, #32]
+    stp     x6, x7, [sp, #48]
+    stp     x8, x9, [sp, #64]
+    stp     x10, x11, [sp, #80]
+    stp     x12, x13, [sp, #96]
+    stp     x14, x15, [sp, #112]
+    stp     x16, x17, [sp, #128]
+    stp     x18, x19, [sp, #144]
+    stp     x20, x21, [sp, #160]
+    stp     x22, x23, [sp, #176]
+    stp     x24, x25, [sp, #192]
+    stp     x26, x27, [sp, #208]
+    stp     x28, x29, [sp, #224]
+    str     x30, [sp, #240]
+.endm
+
+.macro guest_restore_regs
+    ldp     x0, x1, [sp, #0]
+    ldp     x2, x3, [sp, #16]
+    ldp     x4, x5, [sp, #32]
+    ldp     x6, x7, [sp, #48]
+    ldp     x8, x9, [sp, #64]
+    ldp     x10, x11, [sp, #80]
+    ldp     x12, x13, [sp, #96]
+    ldp     x14, x15, [sp, #112]
+    ldp     x16, x17, [sp, #128]
+    ldp     x18, x19, [sp, #144]
+    ldp     x20, x21, [sp, #160]
+    ldp     x22, x23, [sp, #176]
+    ldp     x24, x25, [sp, #192]
+    ldp     x26, x27, [sp, #208]
+    ldp     x28, x29, [sp, #224]
+    ldr     x30, [sp, #240]
+    add     sp, sp, #256
+.endm
 
 .text
 .align 11
 .global hyp_vectors
 hyp_vectors:
-    .set HYP_VBAR, hyp_vectors
-    .org HYP_VBAR
+    .set hyp_vbar, hyp_vectors
+    .org hyp_vbar
 
-    /* Exception from CurrentEL with SP_EL0 */
-    .org (HYP_VBAR + 0x000)
-    b hyp_panic
-    .org (HYP_VBAR + 0x080)
-    b hyp_panic
-    .org (HYP_VBAR + 0x100)
-    b hyp_panic
-    .org (HYP_VBAR + 0x180)
-    b hyp_panic
+    /* 当前 el，使用 sp_el0。 */
+    vector_slot 0x000, hyp_stop
+    vector_slot 0x080, hyp_stop
+    vector_slot 0x100, hyp_stop
+    vector_slot 0x180, hyp_stop
 
-    /* Exception from CurrentEL with SP_ELx */
-    .org (HYP_VBAR + 0x200)
-    b hyp_panic
-    .org (HYP_VBAR + 0x280)
-    b hyp_panic
-    .org (HYP_VBAR + 0x300)
-    b hyp_panic
-    .org (HYP_VBAR + 0x380)
-    b hyp_panic
+    /* 当前 el，使用 sp_elx。 */
+    vector_slot 0x200, hyp_stop
+    vector_slot 0x280, hyp_stop
+    vector_slot 0x300, hyp_stop
+    vector_slot 0x380, hyp_stop
 
-    /* Exception from lower EL, AArch64 */
-    .org (HYP_VBAR + 0x400)
-    b hyp_sync_lower_aarch64    /* EL1/EL0 触发同步异常后，EL2 的统一分发入口 */
-    /* ESR_EL2.EC == HVC64 主要是 Linux 发 PSCI 的 hvc，或者你自定义的 hypercall */
-    /* ESR_EL2.EC == DABT_LOW EL1 对某个地址读/写时发生数据访问异常 */
+    /* lower el，aarch64。 */
+    vector_slot 0x400, hyp_sync_lower_aarch64
+    vector_slot 0x480, hyp_stop
+    vector_slot 0x500, hyp_stop
+    vector_slot 0x580, hyp_stop
 
-    .org (HYP_VBAR + 0x480)
-    b hyp_panic
-    .org (HYP_VBAR + 0x500)
-    b hyp_panic
-    .org (HYP_VBAR + 0x580)
-    b hyp_panic
-
-    /* Exception from lower EL, AArch32 */
-    .org (HYP_VBAR + 0x600)
-    b hyp_panic
-    .org (HYP_VBAR + 0x680)
-    b hyp_panic
-    .org (HYP_VBAR + 0x700)
-    b hyp_panic
-    .org (HYP_VBAR + 0x780)
-    b hyp_panic
-
-
-
-
-
-
-
-
+    /* lower el，aarch32。 */
+    vector_slot 0x600, hyp_stop
+    vector_slot 0x680, hyp_stop
+    vector_slot 0x700, hyp_stop
+    vector_slot 0x780, hyp_stop
 
 hyp_sync_lower_aarch64:
     sub     sp, sp, #16
     stp     x16, x17, [sp]
 
     mrs     x16, esr_el2
-    lsr     x17, x16, #ESR_EL2_EC_SHIFT
-    cmp     x17, #ESR_EL2_EC_HVC64
+    lsr     x17, x16, #esr_el2_ec_shift
+    cmp     x17, #esr_el2_ec_type_hvc64
     b.eq    hyp_hvc_lower_aarch64
-    cmp     x17, #ESR_EL2_EC_DABT_LOW
+    cmp     x17, #esr_el2_ec_type_dabt_low
     b.eq    hyp_dabt_lower_aarch64
+
     ldp     x16, x17, [sp], #16
-    b       hyp_panic
+    b       hyp_stop
 
-
-
-
-/* hypercall */
 hyp_hvc_lower_aarch64:
     add     sp, sp, #16
 
-    movz    w16, #(HYPERCALL_VERSION_ID >> 16), lsl #16
+    movz    w16, #(hypercall_version_id >> 16), lsl #16
     cmp     w0, w16
     b.eq    hyp_hvc_version
 
-    movz    w16, #(HYPERCALL_DEBUG_ID >> 16), lsl #16
-    add     w16, w16, #(HYPERCALL_DEBUG_ID & 0xffff)
+    movz    w16, #(hypercall_debug_id >> 16), lsl #16
+    add     w16, w16, #(hypercall_debug_id & 0xffff)
     cmp     w0, w16
     b.eq    hyp_hvc_custom_test
 
-    movz    w16, #(HYPERCALL_CPU_ON_ID >> 16), lsl #16
-    add     w16, w16, #(HYPERCALL_CPU_ON_ID & 0xffff)
+    movz    w16, #(hypercall_cpu_on_id >> 16), lsl #16
+    add     w16, w16, #(hypercall_cpu_on_id & 0xffff)
     cmp     w0, w16
     b.eq    hyp_hvc_cpu_on
 
     /*
-     * Linux is given PSCI method = "hvc".  EL2 owns the HVC trap and
-     * proxies standard PSCI calls down to QEMU/EL3 with SMC.
+     * linux 使用 hvc 作为 psci 方法。el2 接管 hvc trap，并用 smc
+     * 继续转发给 qemu/el3。function id 放在 x0/w0.
      */
     lsr     w16, w0, #24
-    cmp     w16, #PSCI_32_PREFIX
+    cmp     w16, #psci_32_prefix
     b.eq    hyp_hvc_psci_proxy
-    cmp     w16, #PSCI_64_PREFIX
+    cmp     w16, #psci_64_prefix
     b.eq    hyp_hvc_psci_proxy
 
     b       hyp_hvc_not_supported
 
 hyp_hvc_version:
-    movz    w0, #(HYP_VERSION_0_1 >> 16), lsl #16
-    mov     x1, xzr
-    mov     x2, xzr
-    mov     x3, xzr
-    eret
+    movz    w0, #(hyp_version_0_1 >> 16), lsl #16
+    eret_zero_x1_x3
 
 hyp_hvc_custom_test:
-    movz    w0, #(HYP_CUSTOM_TEST_VALUE >> 16), lsl #16
-    movk    w0, #(HYP_CUSTOM_TEST_VALUE & 0xffff)
-    mov     x1, xzr
-    mov     x2, xzr
-    mov     x3, xzr
-    eret
+    movz    w0, #(hyp_custom_test_value >> 16), lsl #16
+    movk    w0, #(hyp_custom_test_value & 0xffff)
+    eret_zero_x1_x3
 
 .global hyp_hvc_cpu_on
 hyp_hvc_cpu_on:
     /*
-     * x1 = target MPIDR
-     * x2 = entry point
-     * x3 = context_id
+     * x1 = 目标 mpidr
+     * x2 = 入口地址
+     * x3 = 上下文参数
      */
-    movz    w0, #(PSCI_0_2_FN64_CPU_ON >> 16), lsl #16
-    add     w0, w0, #(PSCI_0_2_FN64_CPU_ON & 0xffff)
+    movz    w0, #(psci_0_2_fn64_cpu_on >> 16), lsl #16
+    add     w0, w0, #(psci_0_2_fn64_cpu_on & 0xffff)
     smc     #0
 
-    /* x0 keeps the PSCI return value */
-    mov     x1, xzr
-    mov     x2, xzr
-    mov     x3, xzr
-    eret
+    /* x0 保留 psci 返回值。 */
+    eret_zero_x1_x3
 
 .global hyp_hvc_psci_proxy
 hyp_hvc_psci_proxy:
@@ -165,90 +187,33 @@ hyp_hvc_psci_proxy:
 
 hyp_hvc_not_supported:
     mov     x0, #-1
-    mov     x1, xzr
-    mov     x2, xzr
-    mov     x3, xzr
-    eret
+    eret_zero_x1_x3
 
-
-
-
-/* 数据访问的问题 */
 hyp_dabt_lower_aarch64:
-    sub     sp, sp, #64
-    stp     x16, x17, [sp, #0]
-    stp     x18, x19, [sp, #16]
-    stp     x20, x21, [sp, #32]
-    stp     x22, x23, [sp, #48]
-
-    /*
-     * Stage-2 permission fault on the real GIC distributor.  For now this
-     * drops guest GICD writes instead of letting Linux modify global GICD
-     * state directly.  Reads should be handled by the read-only mapping.
-     */
-    tbz     x16, #6, hyp_dabt_restore_panic
-
-    mrs     x18, hpfar_el2
-    lsl     x18, x18, #8
-    mrs     x19, far_el2
-    and     x19, x19, #0xfff
-    orr     x18, x18, x19
-
-    ldr     x19, =GICD_BASE
-    cmp     x18, x19
-    b.lo    hyp_dabt_restore_panic
-    ldr     x19, =GICD_END
-    cmp     x18, x19
-    b.hs    hyp_dabt_restore_panic
-
-    ldr     x19, =hyp_gicd_write_trap_count
-    ldr     x20, [x19]
-    add     x20, x20, #1
-    str     x20, [x19]
-
-    ldr     x19, =hyp_last_gicd_write_ipa
-    str     x18, [x19]
-    ldr     x19, =hyp_last_gicd_write_esr
-    str     x16, [x19]
-
-    mrs     x20, elr_el2
-    add     x20, x20, #4
-    msr     elr_el2, x20
-
-    ldp     x16, x17, [sp, #0]
-    ldp     x18, x19, [sp, #16]
-    ldp     x20, x21, [sp, #32]
-    ldp     x22, x23, [sp, #48]
-    add     sp, sp, #64
     ldp     x16, x17, [sp], #16
+    guest_save_regs
+
+    mrs     x0, esr_el2
+    mrs     x1, hpfar_el2
+    lsl     x1, x1, #8
+    mrs     x2, far_el2
+    and     x2, x2, #0xfff
+    orr     x1, x1, x2
+
+    bl      hyp_handle_gicd_dabt
+    cbz     x0, hyp_dabt_restore_stop
+
+    mrs     x16, elr_el2
+    add     x16, x16, #4
+    msr     elr_el2, x16
+
+    guest_restore_regs
     eret
 
-hyp_dabt_restore_panic:
-    ldp     x16, x17, [sp, #0]
-    ldp     x18, x19, [sp, #16]
-    ldp     x20, x21, [sp, #32]
-    ldp     x22, x23, [sp, #48]
-    add     sp, sp, #64
-    ldp     x16, x17, [sp], #16
-    b       hyp_panic
+hyp_dabt_restore_stop:
+    guest_restore_regs
+    b       hyp_stop
 
-
-
-
-
-
-hyp_panic:
+hyp_stop:
     wfe
-    b       hyp_panic
-
-    .section ".bss.noclean.hyp", "aw"
-    .align 3
-    .global hyp_gicd_write_trap_count
-hyp_gicd_write_trap_count:
-    .quad   0
-    .global hyp_last_gicd_write_ipa
-hyp_last_gicd_write_ipa:
-    .quad   0
-    .global hyp_last_gicd_write_esr
-hyp_last_gicd_write_esr:
-    .quad   0
+    b       hyp_stop

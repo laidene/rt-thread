@@ -1,0 +1,81 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+
+ColumnLimit: 120
+MaxEmptyLinesToKeep: 2
+
+##
+## 缩进风格
+##
+
+AccessModifierOffset: -2                # 类中public:缩进
+ConstructorInitializerIndentWidth: 2
+ContinuationIndentWidth: 2
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+IndentPPDirectives: BeforeHash          # 宏定义索引
+IndentCaseLabels: false
+BreakBeforeBraces: Custom
+
+
+
+##
+## Align Style
+##
+DerivePointerAlignment: false           # 推导指针对齐
+PointerAlignment: Right                 # 指针对齐
+AlignConsecutiveBitFields:              # bit声明对齐
+  Enabled: true
+  AcrossEmptyLines: true
+  AcrossComments: false
+AlignEscapedNewlines: Left              # 宏定义的\对齐
+AlignTrailingComments:                  # 尾注释对齐
+    Kind: Always
+    OverEmptyLines: 0
+AlignConsecutiveMacros:                 # 宏定义对齐
+    Enabled: true
+    AcrossEmptyLines: true
+    AcrossComments: false
+
+##
+## SingleLine Style
+##
+PackConstructorInitializers: Never          # 构造函数参数初始化参数单行
+BreakConstructorInitializers: BeforeColon   # 冒号 前面换行
+BreakTemplateDeclarations: Yes              # 模板声明单行
+AllowShortLambdasOnASingleLine: None        # lambdas单行
+AllowShortBlocksOnASingleLine: false        # 空块单行
+AllowShortFunctionsOnASingleLine: None      # 空函数单行
+AllowShortIfStatementsOnASingleLine: Never  # 短if换行
+AllowShortLoopsOnASingleLine: false         # 短循环换行
+AllowShortCaseLabelsOnASingleLine: false    # 短case换行
+BinPackArguments: false                     # 实参
+BinPackParameters: OnePerLine               # 形参
+
+Cpp11BracedListStyle: false
+BraceWrapping:                              # 花括号换行
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: true
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false             # Unknown to clang-format-5.0
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: true            # Unknown to clang-format-4.0
+  SplitEmptyRecord: true              # Unknown to clang-format-4.0
+  SplitEmptyNamespace: true           # Unknown to clang-format-4.0
+
+
+##
+## Others
+##
+SortIncludes: Never
+Standard: c++14
+---
