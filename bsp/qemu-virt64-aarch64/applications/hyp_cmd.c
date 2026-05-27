@@ -19,8 +19,14 @@
 #define GICD_ICFGR48_IDX              (0xc0c / 4)
 
 extern rt_uint64_t hyp_gicd_write_trap_count;
+extern rt_uint64_t hyp_gicd_write_sync_count;
+extern rt_uint64_t hyp_gicd_write_denied_count;
 extern rt_uint64_t hyp_last_gicd_write_gpa;
 extern rt_uint64_t hyp_last_gicd_write_esr;
+extern rt_uint64_t hyp_last_gicd_write_value;
+extern rt_uint64_t hyp_last_gicd_write_offset;
+extern rt_uint64_t hyp_last_gicd_write_sync_mask;
+extern rt_uint64_t hyp_last_gicd_write_denied_mask;
 extern rt_uint64_t hyp_irq_trap_count;
 extern rt_uint64_t hyp_irq_inject_count;
 extern rt_uint64_t hyp_irq_lr_busy_count;
@@ -70,10 +76,17 @@ static int hyp(int argc, char **argv)
   }
 
   if (!rt_strcmp(argv[1], "gicd")) {
-    rt_kprintf("gicd trap count=%lu last_gpa=0x%lx last_esr=0x%lx\n",
+    rt_kprintf("gicd trap=%lu sync=%lu denied=%lu\n",
                hyp_gicd_write_trap_count,
+               hyp_gicd_write_sync_count,
+               hyp_gicd_write_denied_count);
+    rt_kprintf("last_gpa=0x%lx offset=0x%lx value=0x%lx esr=0x%lx sync_mask=0x%lx denied_mask=0x%lx\n",
                hyp_last_gicd_write_gpa,
-               hyp_last_gicd_write_esr);
+               hyp_last_gicd_write_offset,
+               hyp_last_gicd_write_value,
+               hyp_last_gicd_write_esr,
+               hyp_last_gicd_write_sync_mask,
+               hyp_last_gicd_write_denied_mask);
     rt_kprintf("shadow ctlr=0x%08x isen0=0x%08x isen1=0x%08x tgt48=0x%08x icfgr48=0x%08x\n",
                linux_gicd_shadow[0],
                linux_gicd_shadow[GICD_ISENABLER0_IDX],

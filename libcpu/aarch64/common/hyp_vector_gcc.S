@@ -4,7 +4,7 @@
  * 本文件负责：
  * - 接管 更低级的 el aarch64 同步异常；
  * - 处理 rt-thread 自定义 hvc 和 linux psci hvc 代理；
- * - 记录并丢弃 linux 对 gicd shadow 区域触发的写访问异常。
+ * - 仿真 linux 对 gicd shadow 区域触发的写访问异常。
  *
  * 这里尽量只保留入口、现场保存和最小分发逻辑；gic 虚拟化策略
  * 放在 hyp_gic.c 中实现。
@@ -199,6 +199,7 @@ hyp_dabt_lower_aarch64:
     mrs     x2, far_el2
     and     x2, x2, #0xfff
     orr     x1, x1, x2
+    mov     x2, sp
 
     bl      hyp_handle_gicd_dabt
     cbz     x0, hyp_dabt_restore_stop

@@ -38,6 +38,7 @@
 #define S2_BLOCK_DEVICE_RW  0x4c1UL
 #define S2_PAGE_NORMAL_RW   0x7ffUL
 #define S2_PAGE_DEVICE_RW   0x4c3UL
+#define S2_PAGE_DEVICE_RO   0x443UL
 
 #define S2_TABLE_ENTRIES    512U
 #define S2_PAGE_SIZE        0x1000UL
@@ -48,6 +49,10 @@
 #define GICD_IIDR           0x008U
 #define GICD_ISENABLER0     0x100U
 #define GICD_ISENABLER1     0x104U
+#define GICD_ICENABLER0     0x180U
+#define GICD_ICENABLER1     0x184U
+#define GICD_ITARGETSR0     0x800U
+#define GICD_ITARGETSR8     0x820U
 #define GICD_ITARGETSR48    0x830U
 #define GICD_ICFGR48        0xc0cU
 
@@ -146,7 +151,7 @@ static void s2_map_gic_pages(rt_uint64_t ipa, rt_uint64_t pa, rt_size_t pages, r
  * 重点
  *      1 把mmio的映射为device rw， 让linux可读可写。
  *      2 把内存地址设置为normal rw，让linux可读可写。
- *      3 把gicd的读写映射到 linux_gicd_shadow,避免linux读写真实的gicd。
+ *      3 把gicd读映射到 linux_gicd_shadow,写触发 stage-2 fault 后由 EL2 仿真。
  *      4 把gicc的读写映射到gicv，让linux用虚拟cpu interface处理中断。
  */
 static void linux_stage2_setup(void)
@@ -166,7 +171,7 @@ static void linux_stage2_setup(void)
   s2_map_device_block(VIRTIO_MMIO_BASE);
   s2_map_ram();
 
-  s2_map_gic_pages(GICD_BASE, hyp_pa(linux_gicd_shadow), GICD_SIZE / S2_PAGE_SIZE, S2_PAGE_NORMAL_RW);
+  s2_map_gic_pages(GICD_BASE, hyp_pa(linux_gicd_shadow), GICD_SIZE / S2_PAGE_SIZE, S2_PAGE_DEVICE_RO);
   s2_map_gic_pages(GICC_BASE, GICV_BASE, 16, S2_PAGE_DEVICE_RW);
 
   rt_hw_cpu_dcache_clean(linux_stage2_l1_00000000_7fffffff, sizeof(linux_stage2_l1_00000000_7fffffff));
@@ -201,10 +206,15 @@ static void linux_stage2_setup(void)
  */
 static void linux_gic_prepare(void)
 {
+  rt_uint32_t offset;
+
   zero_u32(linux_gicd_shadow, GICD_SIZE / sizeof(rt_uint32_t));
 
   gicd_shadow_write32(GICD_TYPER, gicd_read32(GICD_TYPER));
   gicd_shadow_write32(GICD_IIDR, gicd_read32(GICD_IIDR));
+  for (offset = GICD_ITARGETSR0; offset < GICD_ITARGETSR8; offset += sizeof(rt_uint32_t)) {
+    gicd_shadow_write32(offset, gicd_read32(offset));
+  }
 
   /* Keep the real distributor programmed for Linux-owned IRQs. */
   gicd_write32(GICD_ISENABLER0, 0x6c00U << 16); /* CPU3 timer PPIs 10/11/13/14 */
@@ -214,9 +224,11 @@ static void linux_gic_prepare(void)
 
   gicd_shadow_write32(GICD_CTLR, 0);
   gicd_shadow_write32(GICD_ISENABLER0, 0x6c00U << 16);
+  gicd_shadow_write32(GICD_ICENABLER0, 0x6c00U << 16);
   gicd_shadow_write32(GICD_ITARGETSR48, 0x0808U);
   gicd_shadow_write32(GICD_ICFGR48, 0x0000000aU);
   gicd_shadow_write32(GICD_ISENABLER1, 0x3U << 16);
+  gicd_shadow_write32(GICD_ICENABLER1, 0x3U << 16);
 
   rt_hw_cpu_dcache_clean(linux_gicd_shadow, sizeof(linux_gicd_shadow));
 }
