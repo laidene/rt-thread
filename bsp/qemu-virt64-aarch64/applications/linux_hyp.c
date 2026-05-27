@@ -20,8 +20,10 @@
 #define GICD_SIZE           0x00010000UL
 #define GICC_BASE           0x08010000UL
 #define GICH_BASE           0x08030000UL
+#define GICV_BASE           0x08040000UL
 
 #define HCR_EL2_RW          (1UL << 31)
+#define HCR_EL2_IMO         (1UL << 4)
 #define HCR_EL2_SWIO        (1UL << 1)
 #define HCR_EL2_VM          (1UL << 0)
 
@@ -139,6 +141,14 @@ static void s2_map_gic_pages(rt_uint64_t ipa, rt_uint64_t pa, rt_size_t pages, r
   }
 }
 
+/**
+ * 准备stage-2页表
+ * 重点
+ *      1 把mmio的映射为device rw， 让linux可读可写。
+ *      2 把内存地址设置为normal rw，让linux可读可写。
+ *      3 把gicd的读写映射到 linux_gicd_shadow,避免linux读写真实的gicd。
+ *      4 把gicc的读写映射到gicv，让linux用虚拟cpu interface处理中断。
+ */
 static void linux_stage2_setup(void)
 {
   rt_uint64_t vtcr;
@@ -156,13 +166,8 @@ static void linux_stage2_setup(void)
   s2_map_device_block(VIRTIO_MMIO_BASE);
   s2_map_ram();
 
-  /*
-   * Linux sees a private RAM-backed GICD shadow at IPA 0x08000000.
-   * GICC/GICH/GICV are still passed through for this incremental step.
-   */
   s2_map_gic_pages(GICD_BASE, hyp_pa(linux_gicd_shadow), GICD_SIZE / S2_PAGE_SIZE, S2_PAGE_NORMAL_RW);
-  s2_map_gic_pages(GICC_BASE, GICC_BASE, 16, S2_PAGE_DEVICE_RW);
-  s2_map_gic_pages(GICH_BASE, GICH_BASE, 32, S2_PAGE_DEVICE_RW);
+  s2_map_gic_pages(GICC_BASE, GICV_BASE, 16, S2_PAGE_DEVICE_RW);
 
   rt_hw_cpu_dcache_clean(linux_stage2_l1_00000000_7fffffff, sizeof(linux_stage2_l1_00000000_7fffffff));
   rt_hw_cpu_dcache_clean(linux_stage2_l2_00000000_3fffffff, sizeof(linux_stage2_l2_00000000_3fffffff));
@@ -184,6 +189,16 @@ static void linux_stage2_setup(void)
   rt_hw_isb();
 }
 
+
+/**
+ * 配置 CPU3 运行 Linux 需要的 GICD 状态。
+ *
+ * 重点：
+ * 1. 在真实 GICD 中提前使能 CPU3 timer PPI：10/11/13/14。
+ * 2. 在真实 GICD 中把 virtio SPI 48/49 路由到 CPU3，并配置为 edge-triggered。
+ * 3. 把 GICD_TYPER/GICD_IIDR 和 Linux 需要的 enable/target/config 初始状态
+ *    写入 linux_gicd_shadow，供 Linux 访问它看到的 GICD。
+ */
 static void linux_gic_prepare(void)
 {
   zero_u32(linux_gicd_shadow, GICD_SIZE / sizeof(rt_uint32_t));
@@ -206,6 +221,17 @@ static void linux_gic_prepare(void)
   rt_hw_cpu_dcache_clean(linux_gicd_shadow, sizeof(linux_gicd_shadow));
 }
 
+extern void hyp_gich_prepare(void);
+
+
+/*
+ * 为el2进入linux做准备
+ * 重点:
+ *      1 允许el1访问counter
+ *      2 设置stage-2页表
+ *      3 提前配置好虚拟串口和虚拟块设备中断
+ *      4 el2接管el1中断
+ */
 void linux_el2_prepare(void)
 {
   rt_uint64_t cnthctl;
@@ -216,7 +242,9 @@ void linux_el2_prepare(void)
 
   linux_stage2_setup();
   linux_gic_prepare();
+  hyp_gich_prepare();
 
-  rt_hw_sysreg_write(hcr_el2, HCR_EL2_RW | HCR_EL2_SWIO | HCR_EL2_VM);
+  /* 物理 IRQ 先进入 EL2 */
+  rt_hw_sysreg_write(hcr_el2, HCR_EL2_RW | HCR_EL2_IMO | HCR_EL2_SWIO | HCR_EL2_VM);
   rt_hw_isb();
 }

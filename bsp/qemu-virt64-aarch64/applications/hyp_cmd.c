@@ -21,8 +21,30 @@
 extern rt_uint64_t hyp_gicd_write_trap_count;
 extern rt_uint64_t hyp_last_gicd_write_gpa;
 extern rt_uint64_t hyp_last_gicd_write_esr;
+extern rt_uint64_t hyp_irq_trap_count;
+extern rt_uint64_t hyp_irq_inject_count;
+extern rt_uint64_t hyp_irq_lr_busy_count;
+extern rt_uint64_t hyp_irq_unowned_count;
+extern rt_uint64_t hyp_last_phys_irq;
+extern rt_uint64_t hyp_last_lr;
+extern rt_uint64_t hyp_last_lr_index;
+extern rt_uint64_t hyp_gich_lr_count;
+extern rt_uint64_t hyp_last_gich_vtr;
+extern rt_uint64_t hyp_last_gich_elrsr;
+extern rt_uint64_t hyp_last_gich_hcr;
+extern rt_uint64_t hyp_last_gich_vmcr;
+extern rt_uint64_t hyp_last_gich_misr;
+extern rt_uint64_t hyp_last_gich_lr0;
+extern rt_uint64_t hyp_last_gich_lr1;
+extern rt_uint64_t hyp_last_gich_lr2;
+extern rt_uint64_t hyp_last_gich_lr3;
 extern rt_uint32_t linux_gicd_shadow[];
 
+/*
+ * hypervisor 调试命令。
+ * hyp irq 打印的是 EL2 缓存的 GICH 快照，避免 RTT shell 在 EL1 直接访问
+ * 未映射的 GICH 物理寄存器导致 data abort。
+ */
 static int hyp(int argc, char **argv)
 {
   if (argc < 2 || !rt_strcmp(argv[1], "el")) {
@@ -61,7 +83,31 @@ static int hyp(int argc, char **argv)
     return RT_EOK;
   }
 
-  rt_kprintf("Usage: hyp el | hvc | custom | gicd\n");
+  if (!rt_strcmp(argv[1], "irq")) {
+    rt_kprintf("irq trap=%lu inject=%lu lr_busy=%lu unowned=%lu\n",
+               hyp_irq_trap_count,
+               hyp_irq_inject_count,
+               hyp_irq_lr_busy_count,
+               hyp_irq_unowned_count);
+    rt_kprintf("last_phys_irq=%lu last_lr=0x%08lx lr_index=%lu lr_count=%lu gich_vtr=0x%08lx elrsr=0x%08lx\n",
+               hyp_last_phys_irq,
+               hyp_last_lr,
+               hyp_last_lr_index,
+               hyp_gich_lr_count,
+               hyp_last_gich_vtr,
+               hyp_last_gich_elrsr);
+    rt_kprintf("gich hcr=0x%08lx vmcr=0x%08lx misr=0x%08lx lr0=0x%08lx lr1=0x%08lx lr2=0x%08lx lr3=0x%08lx\n",
+               hyp_last_gich_hcr,
+               hyp_last_gich_vmcr,
+               hyp_last_gich_misr,
+               hyp_last_gich_lr0,
+               hyp_last_gich_lr1,
+               hyp_last_gich_lr2,
+               hyp_last_gich_lr3);
+    return RT_EOK;
+  }
+
+  rt_kprintf("Usage: hyp el | hvc | custom | gicd | irq\n");
 
   return -RT_ERROR;
 }

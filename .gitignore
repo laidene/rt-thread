@@ -72,3 +72,6 @@ vdso.lds
 .DS_Store
 
 .gdb_history
+
+AGENT.md
+ubuntu-rootfs.img

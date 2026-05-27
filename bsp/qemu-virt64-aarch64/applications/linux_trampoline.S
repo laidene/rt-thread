@@ -14,24 +14,30 @@
 #define LINUX_DTB_ADDRESS       0x4f000000
 #define SPSR_EL1H_DAIF          0x3c5
 
+
+
+/**
+ * cpu3的启动入口
+ * 重点:
+ *      1 设置el2异常向量表基地址;linux el1的hvc，stage-2 abort，被路由到el2的irq会从这里进入el2。
+ *      2 准备进入linux的stage-2页表，中断初始化，中断接管。
+ *      3 关闭中断。
+ *      4 进入linux。
+ */
     .section ".text.linux_trampoline", "ax"
     .align 6
     .global linux_cpu3_trampoline
 linux_cpu3_trampoline:
-    /*
-     * PSCI enters the target CPU at EL2 on QEMU virt with virtualization=on.
-     * Keep EL2 owned by our monitor, then enter Linux as an EL1 kernel.
-     */
     mrs     x5, CurrentEL
     lsr     x5, x5, #2
     cmp     x5, #2
-    b.ne    .linux_enter_current_el /* 跳到 Linux 镜像入口 */
+    b.ne    .linux_enter_current_el
 
     ldr     x5, =linux_cpu3_hyp_stack_top
     mov     sp, x5
 
     ldr     x5, =hyp_vectors
-    msr     vbar_el2, x5            /* EL2 异常有入口 */
+    msr     vbar_el2, x5
     isb
 
     bl      linux_el2_prepare

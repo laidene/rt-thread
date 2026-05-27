@@ -9,11 +9,11 @@ MaxEmptyLinesToKeep: 2
 ## 缩进风格
 ##
 
-AccessModifierOffset: -2                # 类中public:缩进
-ConstructorInitializerIndentWidth: 2
-ContinuationIndentWidth: 2
-IndentWidth: 2
-TabWidth: 2
+AccessModifierOffset: -4                # 类中public:缩进
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
+IndentWidth: 4
+TabWidth: 4
 UseTab: Never
 IndentPPDirectives: BeforeHash          # 宏定义索引
 IndentCaseLabels: false

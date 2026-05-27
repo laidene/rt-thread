@@ -104,7 +104,7 @@ hyp_vectors:
 
     /* lower el，aarch64。 */
     vector_slot 0x400, hyp_sync_lower_aarch64
-    vector_slot 0x480, hyp_stop
+    vector_slot 0x480, hyp_irq_lower_aarch64 /*  把物理 IRQ 路由到 EL2 然后 EL2 的 IRQ 入口 */
     vector_slot 0x500, hyp_stop
     vector_slot 0x580, hyp_stop
 
@@ -213,6 +213,18 @@ hyp_dabt_lower_aarch64:
 hyp_dabt_restore_stop:
     guest_restore_regs
     b       hyp_stop
+
+hyp_irq_lower_aarch64:
+    /*
+     * Linux EL1 的物理 IRQ 被 HCR_EL2.IMO 路由到这里。
+     * 先保存 Linux 通用寄存器，再调用 C 层读取真实 GICC 并写 GICH_LR。
+     */
+    guest_save_regs
+
+    bl      hyp_handle_irq_lower_aarch64
+
+    guest_restore_regs
+    eret
 
 hyp_stop:
     wfe
