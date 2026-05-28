@@ -8,4 +8,4 @@ qemu-system-aarch64 ^
 -smp 4 ^
 -kernel rtthread.bin ^
 -nographic ^
--serial mon:stdio -s -S
+-serial mon:stdio
