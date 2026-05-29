@@ -9,6 +9,10 @@
 
 #define HYPERCALL_START                 0xc5000000
 #define HYPERCALL_DEBUG_ID              (HYPERCALL_START + 3)
+#define HYPERCALL_CPU_ON_ID             (HYPERCALL_START + 4)
+
+
+#define PSCI_0_2_FN64_CPU_ON            0xc4000003
 
 
 #define HYP_CUSTOM_TEST_VALUE           0xdeadcccc
@@ -91,7 +95,26 @@ hyp_hvc_lower_aarch64:
     add     w16, w16, #(HYPERCALL_DEBUG_ID & 0xffff)
     cmp     w0, w16
     b.eq    hyp_hvc_custom_test
+
+    movz    w16, #(HYPERCALL_CPU_ON_ID >> 16), lsl #16
+    add     w16, w16, #(HYPERCALL_CPU_ON_ID & 0xffff)
+    cmp     w0, w16
+    b.eq    hyp_hvc_cpu_on
+
+    /* never reach if no err */
     b       hyp_hvc_not_supported
+
+
+/*
+ * x1 = target MPIDR
+ * x2 = entry point
+ * x3 = context_id
+ */
+hyp_hvc_cpu_on:
+    movz    w0, #(PSCI_0_2_FN64_CPU_ON >> 16), lsl #16
+    add     w0, w0, #(PSCI_0_2_FN64_CPU_ON & 0xffff)
+    smc     #0
+    eret_zero_x1_x3
 
 
 hyp_hvc_custom_test:

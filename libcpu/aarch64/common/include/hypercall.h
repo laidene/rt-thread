@@ -18,7 +18,8 @@
 #define HYPERCALL_START 0xc5000000 /* HVC64 */
 #define HYPERCALL_END   0xc500ffff /* HVC64 */
 
-#define HYPERCALL_DEBUG_ID (HYPERCALL_START+3)
+#define HYPERCALL_DEBUG_ID (HYPERCALL_START + 3)
+#define HYPERCALL_CPU_ON   (HYPERCALL_START + 4)
 
 rt_inline rt_uint32_t rt_hw_hypercall(rt_uint32_t w0, rt_uint64_t x1, rt_uint64_t x2,
         rt_uint64_t x3, rt_uint64_t x4, rt_uint64_t x5, rt_uint64_t x6, rt_uint32_t w7)
@@ -35,5 +36,6 @@ rt_err_t rt_hv_debug(rt_uint32_t id, rt_uint32_t argc,
         rt_ubase_t arg0, rt_ubase_t arg1, rt_ubase_t arg2,
         rt_ubase_t arg3, rt_ubase_t arg4);
 rt_err_t rt_hv_console(char c);
+
 
 #endif /* __HYPERCALL_H__ */

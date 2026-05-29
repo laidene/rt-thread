@@ -17,10 +17,12 @@
 #include <cpu.h>
 #include <cpuport.h>
 #include <psci.h>
+#include <hypercall.h>
 
 static int psci_cpu_boot(rt_uint32_t cpuid, rt_uint64_t entry)
 {
-    return rt_psci_cpu_on(cpuid, entry);
+    //return rt_psci_cpu_on(cpuid, entry);
+    return rt_hw_hypercall(HYPERCALL_CPU_ON, cpuid, entry, 0, 0, 0, 0, 0);
 }
 
 static void psci_cpu_shutdown(void)
