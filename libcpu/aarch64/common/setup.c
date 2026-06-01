@@ -34,6 +34,11 @@ extern void rt_hw_builtin_fdt();
 extern size_t MMUTable[];
 extern void *system_vectors;
 
+#ifdef SOC_VIRT64_AARCH64
+    #define RTT_LINUX_RAM_START 0x48000000UL
+    #define RTT_LINUX_RAM_END   0x50000000UL
+#endif
+
 static void *fdt_ptr = RT_NULL;
 static rt_size_t fdt_size = 0;
 
@@ -322,6 +327,14 @@ void rt_hw_common_setup(void)
     rt_fdt_scan_initrd(initrd_ranges);
 
     rt_fdt_scan_memory();
+
+#ifdef SOC_VIRT64_AARCH64
+      /*                                                                                                                                    
+       * QEMU patches /memory back to full 256M.                                                                                            
+       * Reserve upper 128M for Linux: 0x48000000 - 0x50000000.                                                                             
+       */
+    rt_memblock_reserve_memory("linux-ram", RTT_LINUX_RAM_START, RTT_LINUX_RAM_END, MEMBLOCK_NONE);
+#endif
 
 #ifdef RT_USING_DMA
     do {

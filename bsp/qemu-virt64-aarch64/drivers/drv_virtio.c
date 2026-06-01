@@ -90,4 +90,4 @@ int rt_virtio_devices_init(void)
 
     return 0;
 }
-INIT_DEVICE_EXPORT(rt_virtio_devices_init);
+//INIT_DEVICE_EXPORT(rt_virtio_devices_init);
