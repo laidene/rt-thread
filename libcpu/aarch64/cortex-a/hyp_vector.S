@@ -5,6 +5,7 @@
 /* 异常原因类型相关 */
 #define ESR_EL2_EC_SHIFT               26
 #define ESR_EL2_EC_HVC64               0x16
+#define ESR_EL2_EC_DABT_LOW            0x24
 
 
 #define HYPERCALL_START                 0xc5000000
@@ -86,9 +87,22 @@ hyp_sync_lower_aarch64:
     cmp     x17, #ESR_EL2_EC_HVC64
     b.eq    hyp_hvc_lower_aarch64
 
+    cmp     x17, #ESR_EL2_EC_DABT_LOW
+    b.eq    hyp_dabt_lower_aarch64
+
     /* never reach if no err */
     ldp     x16, x17, [sp], #16
     b       hyp_stop
+
+hyp_dabt_lower_aarch64:
+    mov     x0, x16
+    mrs     x1, far_el2
+    mrs     x2, hpfar_el2
+    mrs     x3, elr_el2
+    bl      linux_stage2_abort
+
+    add     sp, sp, #16
+    b       hyp_stop    /* 停住 */
 
 hyp_hvc_lower_aarch64:
     add     sp, sp, #16
