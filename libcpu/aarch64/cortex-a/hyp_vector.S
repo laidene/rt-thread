@@ -12,8 +12,10 @@
 #define HYPERCALL_CPU_ON_ID             (HYPERCALL_START + 4)
 
 
-#define PSCI_0_2_FN64_CPU_ON            0xc4000003
-
+#define PSCI_VERSION_VALUE          0x00010001
+#define PSCI_VERSION                0x84000000
+#define PSCI_CPU_ON_64              0xc4000003
+#define PSCI_RET_DENIED             -3
 
 #define HYP_CUSTOM_TEST_VALUE           0xdeadcccc
 
@@ -101,6 +103,16 @@ hyp_hvc_lower_aarch64:
     cmp     w0, w16
     b.eq    hyp_hvc_cpu_on
 
+    movz    w16, #(PSCI_VERSION >> 16), lsl #16
+    add     w16, w16, #(PSCI_VERSION & 0xffff)
+    cmp     w0, w16
+    b.eq    hyp_hvc_version
+
+    movz    w16, #(PSCI_CPU_ON_64 >> 16), lsl #16
+    add     w16, w16, #(PSCI_CPU_ON_64 & 0xffff)
+    cmp     w0, w16
+    b.eq    hyp_hvc_linux_cpu_on
+
     /* never reach if no err */
     b       hyp_hvc_not_supported
 
@@ -111,11 +123,53 @@ hyp_hvc_lower_aarch64:
  * x3 = context_id
  */
 hyp_hvc_cpu_on:
-    movz    w0, #(PSCI_0_2_FN64_CPU_ON >> 16), lsl #16
-    add     w0, w0, #(PSCI_0_2_FN64_CPU_ON & 0xffff)
+    movz    w0, #(PSCI_CPU_ON_64 >> 16), lsl #16
+    add     w0, w0, #(PSCI_CPU_ON_64 & 0xffff)
     smc     #0
     eret_zero_x1_x3
 
+/*
+   * Linux PSCI CPU_ON:
+   * x0 = 0xc4000003
+   * x1 = target MPIDR
+   * x2 = Linux secondary entry
+   * x3 = context
+   */
+  hyp_hvc_linux_cpu_on:
+      /* Linux 只允许唤醒物理 CPU3 */
+      cmp     x1, #3
+      b.eq    1f
+
+      mov     x0, #PSCI_RET_DENIED
+      eret_zero_x1_x3
+
+  1:
+      /* 保存 Linux 给的原始 secondary entry/context */
+      ldr     x16, =linux_secondary_raw_entry
+      str     x2, [x16]
+
+      ldr     x16, =linux_secondary_raw_context
+      str     x3, [x16]
+
+      /*
+       * 调真实 PSCI CPU_ON，但 entry 换成自己的 EL2 linux_secondary_entry。
+       * x1 仍然是 target MPIDR = 3
+       */
+      movz    w0, #(PSCI_CPU_ON_64 >> 16), lsl #16
+      add     w0, w0, #(PSCI_CPU_ON_64 & 0xffff)
+
+      ldr     x2, =linux_secondary_entry
+      mov     x3, xzr
+      smc     #0
+
+      eret_zero_x1_x3
+
+hyp_hvc_version:
+    movz    w0, #(PSCI_VERSION_VALUE >> 16), lsl #16
+    mov     x1, xzr
+    mov     x2, xzr
+    mov     x3, xzr
+    eret
 
 hyp_hvc_custom_test:
     movz    w0, #(HYP_CUSTOM_TEST_VALUE >> 16), lsl #16

@@ -6,7 +6,7 @@
 #include <mmu.h>
 #include <psci.h>
 
-#define LINUX_CPU_MPIDR   0x3UL
+#define LINUX_CPU_MPIDR   0x2UL
 #define LINUX_IMAGE_ENTRY 0x48200000UL
 #define LINUX_DTB_ADDRESS 0x4f000000UL
 
