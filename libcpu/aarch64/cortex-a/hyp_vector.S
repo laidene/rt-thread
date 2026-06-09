@@ -20,6 +20,12 @@
 
 #define HYP_CUSTOM_TEST_VALUE           0xdeadcccc
 
+#define LINUX_S2_TF_SIZE                288
+#define LINUX_S2_TF_ESR                 248
+#define LINUX_S2_TF_FAR                 256
+#define LINUX_S2_TF_HPFAR               264
+#define LINUX_S2_TF_ELR                 272
+
 .macro vector_slot offset, target
     .org (hyp_vbar + \offset)
     b \target
@@ -34,22 +40,22 @@ hyp_vectors:
 
     /* Current EL, using SP_EL0 */
 
-    vector_slot 0x000, hyp_stop /* Synchronous */
-    vector_slot 0x080, hyp_stop /* IRQ/vIRQ */
-    vector_slot 0x100, hyp_stop /* FIQ/vFIQ */
-    vector_slot 0x180, hyp_stop /* SError/vSError */
+    vector_slot 0x000, hyp_current_sync /* Synchronous */
+    vector_slot 0x080, hyp_current_irq /* IRQ/vIRQ */
+    vector_slot 0x100, hyp_current_fiq /* FIQ/vFIQ */
+    vector_slot 0x180, hyp_current_serror /* SError/vSError */
 
     /* Current EL, using SP_ELx */
-    vector_slot 0x200, hyp_stop
-    vector_slot 0x280, hyp_stop
-    vector_slot 0x300, hyp_stop
-    vector_slot 0x380, hyp_stop
+    vector_slot 0x200, hyp_current_sync
+    vector_slot 0x280, hyp_current_irq
+    vector_slot 0x300, hyp_current_fiq
+    vector_slot 0x380, hyp_current_serror
 
     /* Lower EL, AArch64  */
     vector_slot 0x400, hyp_sync_lower_aarch64
-    vector_slot 0x480, hyp_stop
-    vector_slot 0x500, hyp_stop
-    vector_slot 0x580, hyp_stop
+    vector_slot 0x480, hyp_lower_irq
+    vector_slot 0x500, hyp_lower_fiq
+    vector_slot 0x580, hyp_lower_serror
 
     /* Lower EL, AArch32 */
     vector_slot 0x600, hyp_stop
@@ -74,6 +80,70 @@ hyp_vectors:
     eret
 .endm
 
+.macro log_hyp_exception tag
+    /* 保存寄存器 */
+    sub     sp, sp, #64
+    stp     x0, x1, [sp, #0]
+    stp     x2, x3, [sp, #16]
+    stp     x4, x5, [sp, #32]
+    str     x30,    [sp, #48]
+
+    ldr     x0, =\tag
+    mrs     x1, esr_el2
+    mrs     x2, far_el2
+    mrs     x3, hpfar_el2
+    mrs     x4, elr_el2
+    mrs     x5, spsr_el2
+    bl      hyp_log_exception
+
+    /* 恢复寄存器 */
+    ldp     x0, x1, [sp, #0]
+    ldp     x2, x3, [sp, #16]
+    ldp     x4, x5, [sp, #32]
+    ldr     x30,    [sp, #48]
+    add     sp, sp, #64
+.endm
+
+.macro save_linux_s2_tf
+    sub     sp, sp, #LINUX_S2_TF_SIZE
+    stp     x0, x1, [sp, #0]
+    stp     x2, x3, [sp, #16]
+    stp     x4, x5, [sp, #32]
+    stp     x6, x7, [sp, #48]
+    stp     x8, x9, [sp, #64]
+    stp     x10, x11, [sp, #80]
+    stp     x12, x13, [sp, #96]
+    stp     x14, x15, [sp, #112]
+    stp     x16, x17, [sp, #128]
+    stp     x18, x19, [sp, #144]
+    stp     x20, x21, [sp, #160]
+    stp     x22, x23, [sp, #176]
+    stp     x24, x25, [sp, #192]
+    stp     x26, x27, [sp, #208]
+    stp     x28, x29, [sp, #224]
+    str     x30, [sp, #240]
+.endm
+
+.macro restore_linux_s2_tf
+    ldp     x0, x1, [sp, #0]
+    ldp     x2, x3, [sp, #16]
+    ldp     x4, x5, [sp, #32]
+    ldp     x6, x7, [sp, #48]
+    ldp     x8, x9, [sp, #64]
+    ldp     x10, x11, [sp, #80]
+    ldp     x12, x13, [sp, #96]
+    ldp     x14, x15, [sp, #112]
+    ldp     x16, x17, [sp, #128]
+    ldp     x18, x19, [sp, #144]
+    ldp     x20, x21, [sp, #160]
+    ldp     x22, x23, [sp, #176]
+    ldp     x24, x25, [sp, #192]
+    ldp     x26, x27, [sp, #208]
+    ldp     x28, x29, [sp, #224]
+    ldr     x30, [sp, #240]
+    add     sp, sp, #LINUX_S2_TF_SIZE
+.endm
+
 /* ELR_EL2 指向触发异常的那条指令 */
 /* ESR_EL2 能说明异常原因 */
 /* FAR_EL2/HPFAR_EL2 可给出 fault 地址 */
@@ -92,16 +162,34 @@ hyp_sync_lower_aarch64:
 
     /* never reach if no err */
     ldp     x16, x17, [sp], #16
+    log_hyp_exception hyp_log_lower_sync_unhandled
     b       hyp_stop
 
 hyp_dabt_lower_aarch64:
-    mov     x0, x16
-    mrs     x1, far_el2
-    mrs     x2, hpfar_el2
-    mrs     x3, elr_el2
+    ldp     x16, x17, [sp], #16
+    save_linux_s2_tf
+
+    mrs     x16, esr_el2
+    str     x16, [sp, #LINUX_S2_TF_ESR]
+    mrs     x16, far_el2
+    str     x16, [sp, #LINUX_S2_TF_FAR]
+    mrs     x16, hpfar_el2
+    str     x16, [sp, #LINUX_S2_TF_HPFAR]
+    mrs     x16, elr_el2
+    str     x16, [sp, #LINUX_S2_TF_ELR]
+
+    mov     x0, sp
     bl      linux_stage2_abort
 
-    add     sp, sp, #16
+    cbnz    x0, hyp_s2_unhandled
+
+    ldr     x16, [sp, #LINUX_S2_TF_ELR]
+    msr     elr_el2, x16
+    restore_linux_s2_tf
+    eret
+
+hyp_s2_unhandled:
+    add     sp, sp, #LINUX_S2_TF_SIZE
     b       hyp_stop    /* 停住 */
 
 hyp_hvc_lower_aarch64:
@@ -149,7 +237,7 @@ hyp_hvc_cpu_on:
    * x2 = Linux secondary entry
    * x3 = context
    */
-  hyp_hvc_linux_cpu_on:
+hyp_hvc_linux_cpu_on:
       /* Linux 只允许唤醒物理 CPU3 */
       cmp     x1, #3
       b.eq    1f
@@ -191,12 +279,61 @@ hyp_hvc_custom_test:
     eret_zero_x1_x3
 
 hyp_hvc_not_supported:
+    log_hyp_exception hyp_log_hvc_not_supported
     mov     x0, #-1
     mov     x1, xzr
     mov     x2, xzr
     mov     x3, xzr
     eret
 
+hyp_current_sync:
+    log_hyp_exception hyp_log_current_sync
+    b       hyp_stop
+
+hyp_current_irq:
+    log_hyp_exception hyp_log_current_irq
+    b       hyp_stop
+
+hyp_current_fiq:
+    log_hyp_exception hyp_log_current_fiq
+    b       hyp_stop
+
+hyp_current_serror:
+    log_hyp_exception hyp_log_current_serror
+    b       hyp_stop
+
+hyp_lower_irq:
+    log_hyp_exception hyp_log_lower_irq
+    b       hyp_stop
+
+hyp_lower_fiq:
+    log_hyp_exception hyp_log_lower_fiq
+    b       hyp_stop
+
+hyp_lower_serror:
+    log_hyp_exception hyp_log_lower_serror
+    b       hyp_stop
+
 hyp_stop:
     wfe
     b       hyp_stop
+
+    .section ".rodata"
+hyp_log_lower_sync_unhandled:
+    .asciz "[hyp] lower sync unhandled"
+hyp_log_hvc_not_supported:
+    .asciz "[hyp] hvc not supported"
+hyp_log_current_sync:
+    .asciz "[hyp] current sync"
+hyp_log_current_irq:
+    .asciz "[hyp] current irq"
+hyp_log_current_fiq:
+    .asciz "[hyp] current fiq"
+hyp_log_current_serror:
+    .asciz "[hyp] current serror"
+hyp_log_lower_irq:
+    .asciz "[hyp] lower irq"
+hyp_log_lower_fiq:
+    .asciz "[hyp] lower fiq"
+hyp_log_lower_serror:
+    .asciz "[hyp] lower serror"

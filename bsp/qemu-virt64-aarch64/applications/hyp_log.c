@@ -2,15 +2,15 @@
 
 #include "hyp_log.h"
 
-#define HYP_LOG_BUF_SIZE    4096U
-#define HYP_LOG_GICD_SIZE   0x00010000UL
+#define HYP_LOG_BUF_SIZE 16384U
+
 
 static char hyp_log_buf[HYP_LOG_BUF_SIZE];
 static volatile rt_uint32_t hyp_log_head;
 static volatile rt_uint32_t hyp_log_count;
 static volatile rt_uint32_t hyp_log_dropped;
 
-static void hyp_log_putc(char ch)
+void hyp_log_putc(char ch)
 {
     hyp_log_buf[hyp_log_head] = ch;
     hyp_log_head = (hyp_log_head + 1U) % HYP_LOG_BUF_SIZE;
@@ -22,45 +22,64 @@ static void hyp_log_putc(char ch)
     }
 }
 
-static void hyp_log_puts(const char *str)
+void hyp_log_puts(const char *str)
 {
     while (*str != '\0') {
         hyp_log_putc(*str++);
     }
 }
 
-static void hyp_log_put_hex(rt_uint64_t value)
+void hyp_log_put_hex(rt_uint64_t value)
 {
     static const char hex[] = "0123456789abcdef";
+    rt_bool_t started = RT_FALSE;
 
     hyp_log_puts("0x");
 
+    if (value == 0) {
+        hyp_log_putc('0');
+        return;
+    }
+
     for (int shift = 60; shift >= 0; shift -= 4) {
-        hyp_log_putc(hex[(value >> shift) & 0xfU]);
+        rt_uint8_t digit = (value >> shift) & 0xfU;
+
+        if (!started && digit == 0U) {
+            continue;
+        }
+
+        started = RT_TRUE;
+        hyp_log_putc(hex[digit]);
     }
 }
 
-void hyp_log_stage2_abort(rt_uint64_t ipa, rt_uint64_t gicd_offset,
-        rt_uint64_t esr, rt_uint64_t far, rt_uint64_t hpfar, rt_uint64_t elr)
+void hyp_log_exception(const char *tag, rt_uint64_t esr, rt_uint64_t far,
+                       rt_uint64_t hpfar, rt_uint64_t elr, rt_uint64_t spsr)
 {
-    if (gicd_offset < HYP_LOG_GICD_SIZE) {
-        hyp_log_puts("stage2 gicd ipa=");
-        hyp_log_put_hex(ipa);
-        hyp_log_puts(" off=");
-        hyp_log_put_hex(gicd_offset);
-    } else {
-        hyp_log_puts("stage2 abort ipa=");
-        hyp_log_put_hex(ipa);
-    }
+    rt_uint64_t ec = (esr >> 26) & 0x3fUL;
+    rt_uint64_t iss = esr & 0x01ffffffUL;
+    rt_uint64_t dfsc = esr & 0x3fUL;
+    rt_uint64_t wnr = (esr >> 6) & 0x1UL;
 
+    hyp_log_puts(tag);
     hyp_log_puts(" esr=");
     hyp_log_put_hex(esr);
+    hyp_log_puts(" ec=");
+    hyp_log_put_hex(ec);
+    hyp_log_puts(" iss=");
+    hyp_log_put_hex(iss);
+    hyp_log_puts(" dfsc=");
+    hyp_log_put_hex(dfsc);
+    hyp_log_puts(" wnr=");
+    hyp_log_put_hex(wnr);
     hyp_log_puts(" far=");
     hyp_log_put_hex(far);
     hyp_log_puts(" hpfar=");
     hyp_log_put_hex(hpfar);
     hyp_log_puts(" elr=");
     hyp_log_put_hex(elr);
+    hyp_log_puts(" spsr=");
+    hyp_log_put_hex(spsr);
     hyp_log_putc('\n');
 }
 
