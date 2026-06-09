@@ -2,6 +2,7 @@
 
 #include "hyp_log.h"
 #include "linux_stage2.h"
+#include "linux_gicd_shadow.h"
 
 #define S2_BLOCK_SIZE        0x00200000UL
 #define S2_PAGE_SIZE         0x00001000UL
@@ -30,7 +31,7 @@
 /*
  * VTCR_EL2 for Linux stage-2:
  *
- * T0SZ  = 24      IPA size = 64 - 24 = 40 bits                 虚拟地址的位宽
+ * T0SZ  = 25      IPA size = 64 - 25 = 39 bits, matching a level-1 root table
  * SL0   = 0b01    start walk from level 1, for 4KB granule
  *      L0 index = IPA[47:39]
  *      L1 index = IPA[38:30]
@@ -43,7 +44,7 @@
  * TG0   = 0b00    4KB granule
  * PS    = 0b010   40-bit physical address size
  */
-#define VTCR_EL2_T0SZ_40BIT_IPA (24UL << 0)
+#define VTCR_EL2_T0SZ_39BIT_IPA (25UL << 0)
 #define VTCR_EL2_SL0_L1         (1UL << 6)
 #define VTCR_EL2_IRGN0_WBWA     (1UL << 8)
 #define VTCR_EL2_ORGN0_WBWA     (1UL << 10)
@@ -52,7 +53,7 @@
 #define VTCR_EL2_PS_40BIT       (2UL << 16)
 
 #define VTCR_EL2_VALUE              \
-      (VTCR_EL2_T0SZ_40BIT_IPA  |   \
+      (VTCR_EL2_T0SZ_39BIT_IPA  |   \
        VTCR_EL2_SL0_L1          |   \
        VTCR_EL2_IRGN0_WBWA      |   \
        VTCR_EL2_ORGN0_WBWA      |   \
@@ -142,6 +143,7 @@ static void linux_stage2_map_ram(void)
 
 void linux_stage2_init(void)
 {
+    linux_gicd_shadow_init();
     linux_stage2_zero_tables();
 
     linux_stage2_l1_00000000_7fffffff[0] = (rt_uint64_t)linux_stage2_l2_00000000_3fffffff | S2_DESC_TABLE;
@@ -169,26 +171,33 @@ static rt_uint64_t linux_stage2_fault_ipa(rt_uint64_t far, rt_uint64_t hpfar)
 }
 
 
-/**
- * esr   = Exception Syndrome Register
- *      EC    = Data Abort from lower EL
- *      ISS   = data abort syndrome
- *      WnR   = 0/1，读或写
- *      SRT   = guest 目标寄存器编号
- *      SRT   = guest 目标寄存器编号
- *      SAS   = 访问宽度
- *      DFSC  = fault 类型
- * far   = Fault Address Register
- *       对于 data abort，它通常保存 fault 发生时的 guest VA，也就是 Linux 当时访问的虚拟地址
- * hpfar = Hypervisor IPA Fault Address Register
- *      它保存 stage-2 fault 对应的 IPA 高位。通常用它和 FAR_EL2 的低 12 位组合，恢复 IPA
- * elr   = Exception Link Register
- *      它保存异常返回地址，也就是 Linux 触发 fault 的那条指令地址
- */
-void linux_stage2_abort(rt_uint64_t esr, rt_uint64_t far, rt_uint64_t hpfar, rt_uint64_t elr)
+/*
+    * esr   = Exception Syndrome Register
+    *      EC    = Data Abort from lower EL
+    *      ISS   = data abort syndrome
+    *      WnR   = 0/1，读或写
+    *      SRT   = guest 目标寄存器编号
+    *      SAS   = 访问宽度
+    *      DFSC  = fault 类型
+    * far   = Fault Address Register
+    *      对于 data abort，它通常保存 fault 发生时的 guest VA，也就是 Linux 当时访问的虚拟地址
+    * hpfar = Hypervisor IPA Fault Address Register
+    *      它保存 stage-2 fault 对应的 IPA 高位。通常用它和 FAR_EL2 的低 12 位组合，恢复 IPA
+    * elr   = Exception Link Register
+    *      它保存异常返回地址，也就是 Linux 触发 fault 的那条指令地址
+    */
+int linux_stage2_abort(struct linux_stage2_trap_frame *tf)
 {
-    rt_uint64_t ipa = linux_stage2_fault_ipa(far, hpfar);
-    rt_uint64_t gicd_offset = ipa - S2_GICD_BASE;
+    rt_uint64_t ipa = linux_stage2_fault_ipa(tf->far, tf->hpfar);
 
-    hyp_log_stage2_abort(ipa, gicd_offset, esr, far, hpfar, elr);
+
+    if (ipa >= S2_GICD_BASE && ipa < (S2_GICD_BASE + S2_GICD_SIZE) ) {
+        return linux_gicd_shadow_abort(tf);
+    } else {
+        hyp_log_puts("[stage2-abort] unsupport ipa:");
+        hyp_log_put_hex(ipa);
+        hyp_log_putc('\n');
+    }
+
+    return -RT_ERROR;
 }
