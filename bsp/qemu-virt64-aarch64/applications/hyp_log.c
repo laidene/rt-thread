@@ -83,6 +83,19 @@ void hyp_log_exception(const char *tag, rt_uint64_t esr, rt_uint64_t far,
     hyp_log_putc('\n');
 }
 
+void hyp_log_hvc_args(rt_uint64_t x0, rt_uint64_t x1, rt_uint64_t x2, rt_uint64_t x3)
+{
+    hyp_log_puts("[hyp] hvc args x0=");
+    hyp_log_put_hex(x0);
+    hyp_log_puts(" x1=");
+    hyp_log_put_hex(x1);
+    hyp_log_puts(" x2=");
+    hyp_log_put_hex(x2);
+    hyp_log_puts(" x3=");
+    hyp_log_put_hex(x3);
+    hyp_log_putc('\n');
+}
+
 void hyp_log_dump(void)
 {
     rt_uint32_t count = hyp_log_count;

@@ -280,6 +280,11 @@ hyp_hvc_custom_test:
 
 hyp_hvc_not_supported:
     log_hyp_exception hyp_log_hvc_not_supported
+    sub     sp, sp, #16
+    str     x30, [sp]
+    bl      hyp_log_hvc_args
+    ldr     x30, [sp]
+    add     sp, sp, #16
     mov     x0, #-1
     mov     x1, xzr
     mov     x2, xzr
