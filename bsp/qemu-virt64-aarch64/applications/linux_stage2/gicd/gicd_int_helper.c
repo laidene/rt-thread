@@ -11,6 +11,7 @@
 rt_uint64_t linux_gicd_real_base;
 
 static const rt_uint32_t linux_gicd_open_intids[] = {
+    0x1BU,
     0x30U,
     0x31U,
 };
