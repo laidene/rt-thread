@@ -2,7 +2,7 @@
 #include <armv8.h>
 #include <hypercall.h>
 
-#include "hyp_log.h"
+#include "hyp/hyp_log.h"
 
 #define HYP_CUSTOM_TEST_VALUE 0xdeadcccc
 

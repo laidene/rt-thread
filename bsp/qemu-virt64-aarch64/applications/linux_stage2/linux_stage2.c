@@ -1,20 +1,24 @@
 #include <rtthread.h>
 
-#include "hyp_log.h"
+#include "hyp/hyp_log.h"
 #include "linux_stage2.h"
 #include "linux_gicd_shadow.h"
+#include "data_abort_helper.h"
+#include "linux_stage2/gicd/gicd_reg.h"
 
+/* virtual board mem info */
+#define S2_LINUX_RAM_BASE    0x48000000UL
+#define S2_VIRTIO_BASE       0x0a000000UL
+#define S2_GICC_PA           0x08010000UL
+#define S2_GICD_BASE         0x08000000UL
+#define S2_GICD_SIZE         0x00010000UL
+/* virtual board mem info */
+
+
+/* stage2 mmu micro */
 #define S2_BLOCK_SIZE        0x00200000UL
 #define S2_PAGE_SIZE         0x00001000UL
 
-#define S2_LINUX_RAM_BASE    0x48000000UL
-#define S2_VIRTIO_BASE       0x0a000000UL
-#define S2_GICV_PA           0x08040000UL
-#define S2_GICD_BASE         0x08000000UL
-#define S2_GICD_SIZE         0x00010000UL
-
-
-/* desc_type [1:0] */
 #define S2_DESC_BLOCK        0x1UL
 #define S2_DESC_TABLE        0x3UL
 
@@ -27,6 +31,7 @@
 #define S2_DEVICE_BLOCK_ATTR (S2_MEMATTR_DEVICE | S2_AP_RW | S2_SH_INNER | S2_AF | S2_DESC_BLOCK)
 #define S2_DEVICE_PAGE_ATTR  (S2_MEMATTR_DEVICE | S2_AP_RW | S2_SH_INNER | S2_AF | S2_DESC_TABLE)
 #define S2_NORMAL_BLOCK_ATTR (S2_MEMATTR_NORMAL | S2_AP_RW | S2_SH_INNER | S2_AF | S2_DESC_BLOCK)
+/* stage2 mmu micro */
 
 /*
  * VTCR_EL2 for Linux stage-2:
@@ -117,12 +122,14 @@ static void linux_stage2_zero_tables(void)
     }
 }
 
-static void linux_stage2_map_gicv(void)
+static void linux_stage2_map_gicc(void)
 {
-    rt_uint64_t pa = S2_GICV_PA;
+    rt_uint64_t pa = S2_GICC_PA;
 
     /*
-     * Guest GICC IPA 0x08010000-0x0801ffff maps to real GICV.
+     * Guest GICC IPA 0x08010000-0x0801ffff maps to real GICC.
+     * GICD is still trapped by stage-2, so Linux cannot overwrite
+     * distributor state outside the shadow/whitelist path.
      * Guest GICD IPA 0x08000000 deliberately stays unmapped.
      */
     for (int idx = 16; idx < 32; ++idx) {
@@ -141,7 +148,7 @@ static void linux_stage2_map_ram(void)
     }
 }
 
-void linux_stage2_init(void)
+void linux_stage2_prepare(void)
 {
     linux_gicd_shadow_init();
     linux_stage2_zero_tables();
@@ -152,7 +159,7 @@ void linux_stage2_init(void)
     linux_stage2_l2_00000000_3fffffff[64] = (rt_uint64_t)linux_stage2_l3_08000000_081fffff | S2_DESC_TABLE;
     linux_stage2_l2_00000000_3fffffff[80] = S2_VIRTIO_BASE | S2_DEVICE_BLOCK_ATTR;
 
-    linux_stage2_map_gicv();
+    linux_stage2_map_gicc();
     linux_stage2_map_ram();
 
     hyp_clean_dcache(linux_stage2_l1_00000000_7fffffff, sizeof(linux_stage2_l1_00000000_7fffffff));
@@ -160,16 +167,15 @@ void linux_stage2_init(void)
     hyp_clean_dcache(linux_stage2_l2_40000000_7fffffff, sizeof(linux_stage2_l2_40000000_7fffffff));
     hyp_clean_dcache(linux_stage2_l3_08000000_081fffff, sizeof(linux_stage2_l3_08000000_081fffff));
 
+    __asm__ volatile("dsb sy\n\tisb" ::: "memory");
+}
+
+void linux_stage2_enable(void)
+{
     hyp_write_vtcr_el2(VTCR_EL2_VALUE);
     hyp_write_vttbr_el2((rt_uint64_t)linux_stage2_l1_00000000_7fffffff);
     hyp_stage2_tlb_invalidate();
 }
-
-static rt_uint64_t linux_stage2_fault_ipa(rt_uint64_t far, rt_uint64_t hpfar)
-{
-    return ((hpfar & 0xfffffffff0UL) << 8) | (far & 0xfffUL);
-}
-
 
 /*
     * esr   = Exception Syndrome Register
@@ -194,9 +200,7 @@ int linux_stage2_abort(struct linux_stage2_trap_frame *tf)
     if (ipa >= S2_GICD_BASE && ipa < (S2_GICD_BASE + S2_GICD_SIZE) ) {
         return linux_gicd_shadow_abort(tf);
     } else {
-        hyp_log_puts("[stage2-abort] unsupport ipa:");
-        hyp_log_put_hex(ipa);
-        hyp_log_putc('\n');
+        hyp_log_printf("[stage2-abort] unsupport ipa=0x%x\n", ipa);
     }
 
     return -RT_ERROR;

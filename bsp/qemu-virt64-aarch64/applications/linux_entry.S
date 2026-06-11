@@ -12,6 +12,10 @@
 #define SPSR_EL2_F              (1 << 6)
 #define SPSR_EL2_EL1H_DAIF      (SPSR_EL2_M_EL1H | SPSR_EL2_D | SPSR_EL2_A | SPSR_EL2_I | SPSR_EL2_F)
 
+
+    .extern linux_hyp_enter_el1
+    .extern hyp_vectors
+
     .section ".text.linux_entry", "ax"
     .align 6
     .global linux_entry

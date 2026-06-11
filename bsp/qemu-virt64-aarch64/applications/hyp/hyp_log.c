@@ -1,4 +1,5 @@
 #include <rtthread.h>
+#include <stdarg.h>
 
 #include "hyp_log.h"
 
@@ -53,48 +54,75 @@ void hyp_log_put_hex(rt_uint64_t value)
     }
 }
 
-void hyp_log_exception(const char *tag, rt_uint64_t esr, rt_uint64_t far,
-                       rt_uint64_t hpfar, rt_uint64_t elr, rt_uint64_t spsr)
+static void hyp_log_put_uint(rt_uint32_t value)
 {
-    rt_uint64_t ec = (esr >> 26) & 0x3fUL;
-    rt_uint64_t iss = esr & 0x01ffffffUL;
-    rt_uint64_t dfsc = esr & 0x3fUL;
-    rt_uint64_t wnr = (esr >> 6) & 0x1UL;
+    rt_uint32_t div = 1;
 
-    hyp_log_puts(tag);
-    hyp_log_puts(" esr=");
-    hyp_log_put_hex(esr);
-    hyp_log_puts(" ec=");
-    hyp_log_put_hex(ec);
-    hyp_log_puts(" iss=");
-    hyp_log_put_hex(iss);
-    hyp_log_puts(" dfsc=");
-    hyp_log_put_hex(dfsc);
-    hyp_log_puts(" wnr=");
-    hyp_log_put_hex(wnr);
-    hyp_log_puts(" far=");
-    hyp_log_put_hex(far);
-    hyp_log_puts(" hpfar=");
-    hyp_log_put_hex(hpfar);
-    hyp_log_puts(" elr=");
-    hyp_log_put_hex(elr);
-    hyp_log_puts(" spsr=");
-    hyp_log_put_hex(spsr);
-    hyp_log_putc('\n');
+    while ((value / div) >= 10U) {
+        div *= 10U;
+    }
+
+    while (div != 0U) {
+        hyp_log_putc((char)('0' + (value / div)));
+        value %= div;
+        div /= 10U;
+    }
 }
 
-void hyp_log_hvc_args(rt_uint64_t x0, rt_uint64_t x1, rt_uint64_t x2, rt_uint64_t x3)
+void hyp_log_printf(const char *fmt, ...)
 {
-    hyp_log_puts("[hyp] hvc args x0=");
-    hyp_log_put_hex(x0);
-    hyp_log_puts(" x1=");
-    hyp_log_put_hex(x1);
-    hyp_log_puts(" x2=");
-    hyp_log_put_hex(x2);
-    hyp_log_puts(" x3=");
-    hyp_log_put_hex(x3);
-    hyp_log_putc('\n');
+    va_list ap;
+
+    va_start(ap, fmt);
+
+    while (*fmt != '\0') {
+        if (*fmt != '%') {
+            hyp_log_putc(*fmt++);
+            continue;
+        }
+
+        ++fmt;
+        switch (*fmt) {
+        case '\0':
+            hyp_log_putc('%');
+            --fmt;
+            break;
+        case '%':
+            hyp_log_putc('%');
+            break;
+        case 's': {
+            const char *str = va_arg(ap, const char *);
+            hyp_log_puts(str != RT_NULL ? str : "(null)");
+            break;
+        }
+        case 'x':
+            hyp_log_put_hex((rt_uint32_t)va_arg(ap, unsigned int));
+            break;
+        case 'l':
+            if (fmt[1] == 'x') {
+                hyp_log_put_hex((rt_uint64_t)va_arg(ap, unsigned long));
+                ++fmt;
+            } else {
+                hyp_log_putc('%');
+                hyp_log_putc('l');
+            }
+            break;
+        case 'u':
+            hyp_log_put_uint((rt_uint32_t)va_arg(ap, unsigned int));
+            break;
+        default:
+            hyp_log_putc('%');
+            hyp_log_putc(*fmt);
+            break;
+        }
+
+        ++fmt;
+    }
+
+    va_end(ap);
 }
+
+
 
 void hyp_log_dump(void)
 {

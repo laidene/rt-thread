@@ -31,6 +31,10 @@
     b \target
 .endm
 
+    .extern hyp_log_exception
+    .extern linux_stage2_abort
+    .extern linux_secondary_entry
+
 .text
 .align 11
 .global hyp_vectors

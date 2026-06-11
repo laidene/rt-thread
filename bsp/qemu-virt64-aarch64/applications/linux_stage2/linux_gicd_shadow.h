@@ -3,9 +3,10 @@
 
 #include <rtthread.h>
 
-#include "linux_stage2.h"
+#include "data_abort_helper.h"
 
-void linux_gicd_shadow_init(void);
+void linux_gicd_shadow_prepare(void);//todo
+
 int linux_gicd_shadow_abort(struct linux_stage2_trap_frame *tf);
 
 #endif

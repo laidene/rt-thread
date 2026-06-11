@@ -1,6 +1,7 @@
 #include <rtthread.h>
 
-#include "linux_stage2.h"
+#include "linux_stage2/linux_stage2.h"
+#include "hyp/hyp_log.h"
 
 #define HCR_EL2_VM     (1UL << 0)
 #define HCR_EL2_RW     (1UL << 31)
@@ -66,6 +67,8 @@ static inline void hyp_isb(void)
 }
 
 
+
+
 void linux_hyp_enter_el1(rt_uint64_t entry)
 {
     hyp_write_hcr_el2(HCR_EL2_RW);
@@ -73,7 +76,7 @@ void linux_hyp_enter_el1(rt_uint64_t entry)
     hyp_write_cntvoff_el2(0);
     hyp_write_cnthctl_el2(hyp_read_cnthctl_el2() | 0x3);
 
-    linux_stage2_init();
+    linux_stage2_enable();
 
     hyp_write_elr_el2(entry);
     hyp_write_hcr_el2(HCR_EL2_STAGE2);

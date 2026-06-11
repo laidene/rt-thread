@@ -1,7 +1,8 @@
 from building import *
 
 cwd     = GetCurrentDir()
-src     = Glob('*.c') + Glob('*.cpp') + Glob('*.S')
+src     = Glob('*.c') + Glob('*.cpp') + Glob('*.S') +  Glob('hyp/*.S') +  Glob('hyp/*.c') +  Glob('linux_stage2/*.c') + Glob('shell/*.c') 
+src    += Glob('linux_stage2/gicd/*.c')
 CPPPATH = [cwd]
 
 group = DefineGroup('Applications', src, depend = [''], CPPPATH = CPPPATH)
