@@ -3,13 +3,14 @@
 #include <hypercall.h>
 
 #include "hyp/hyp_log.h"
+#include "linux_stage2/linux_vgic.h"
 
 #define HYP_CUSTOM_TEST_VALUE 0xdeadcccc
 
 static int hyp(int argc, char **argv)
 {
     if (argc < 2) {
-        rt_kprintf("Usage: hyp custom | log [clear]\n");
+        rt_kprintf("Usage: hyp custom | log [clear] | vgic\n");
         return -RT_ERROR;
     }
 
@@ -32,7 +33,12 @@ static int hyp(int argc, char **argv)
         return RT_EOK;
     }
 
-    rt_kprintf("Usage: hyp custom | log [clear]\n");
+    if (!rt_strcmp(argv[1], "vgic")) {
+        linux_vgic_dump();
+        return RT_EOK;
+    }
+
+    rt_kprintf("Usage: hyp custom | log [clear] | vgic\n");
 
     return -RT_ERROR;
 }

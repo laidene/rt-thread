@@ -1,6 +1,7 @@
 #include <rtthread.h>
 #include "../../hyp/hyp_log.h"
 #include "../data_abort_helper.h"
+#include "../linux_vgic.h"
 #include "drivers/virt.h"
 #include "gicd_reg.h"
 
@@ -23,15 +24,61 @@ static rt_uint32_t *linux_gicd_shadow_enable_word(rt_uint64_t offset)
     return &linux_gicd_isenabler[index - 1U];
 }
 
+static void linux_gicd_log_real_intid_state(rt_uint32_t intid)
+{
+    rt_uint32_t word_index;
+    rt_uint32_t bit;
+    rt_uint32_t cfg_index;
+    rt_uint32_t cfg_shift;
+    rt_uint32_t gicd_ctlr;
+    rt_uint32_t group;
+    rt_uint32_t enable;
+    rt_uint32_t pending;
+    rt_uint32_t cfg;
+    rt_uint32_t cfg_value;
+    rt_uint8_t target;
+
+    if (linux_gicd_real_base == 0U) {
+        return;
+    }
+
+    word_index = intid >> 5;
+    bit = intid & 0x1fU;
+    cfg_index = intid >> 4;
+    cfg_shift = ((intid & 0xfU) * 2U) + 1U;
+
+    enable = *linux_gicd_real_reg32(GICD_ISENABLER_OFFSET_BASE + word_index * 4U);
+    pending = *linux_gicd_real_reg32(GICD_ISPENDR_OFFSET_BASE + word_index * 4U);
+    group = *linux_gicd_real_reg32(GICD_IGROUPR_OFFSET_BASE + word_index * 4U);
+    gicd_ctlr = *linux_gicd_real_reg32(GICD_CTLR_OFFSET);
+    target = linux_gicd_real_read_byte(GICD_ITARGETSR_OFFSET_BASE + intid);
+    cfg = *linux_gicd_real_reg32(GICD_ICFGR_OFFSET_BASE + cfg_index * 4U);
+    cfg_value = (cfg >> cfg_shift) & 0x1U;
+
+    hyp_log_printf("[gicd_real] int=%u en=%u pend=%u group=%u target=%x cfg=%u ctlr=%x raw_en=%x raw_pend=%x raw_cfg=%x\n",
+                   intid,
+                   (enable >> bit) & 0x1U,
+                   (pending >> bit) & 0x1U,
+                   (group >> bit) & 0x1U,
+                   target,
+                   cfg_value,
+                   gicd_ctlr,
+                   enable,
+                   pending,
+                   cfg);
+}
+
 
 int linux_gicd_shadow_isenabler_access(struct linux_stage2_trap_frame *tf, rt_uint64_t offset, rt_bool_t is_set_reg)
 {
     rt_uint32_t srt;
+    rt_uint32_t index;
     rt_uint32_t value;
     rt_uint32_t *shadow;
     rt_uint32_t base_int_id;
     rt_uint32_t read_value;
-    base_int_id = (offset - GICD_ISENABLER_OFFSET_BASE) * 8;
+    index = (rt_uint32_t)((offset - GICD_ISENABLER_OFFSET_BASE) >> 2);
+    base_int_id = index * 32U;
 
     if ((tf->esr & ESR_ISS_SAS_MASK) != ESR_SAS_WORD) {
         return -RT_ERROR;
@@ -67,10 +114,13 @@ int linux_gicd_shadow_isenabler_access(struct linux_stage2_trap_frame *tf, rt_ui
                 if (is_set_reg) {
                     hyp_log_printf(
                         "[gicd_enable] vcpu=%u int=%u\n", linux_get_vcpu_id(), base_int_id + bit);
+                    linux_gicd_log_real_intid_state(base_int_id + bit);
+                    linux_vgic_log_cpuif_state("after-enable");
 
                 } else {
                     hyp_log_printf(
                         "[gicd_disable] vcpu=%u int=%u\n", linux_get_vcpu_id(), base_int_id + bit);
+                    linux_gicd_log_real_intid_state(base_int_id + bit);
                 }
             }
         }

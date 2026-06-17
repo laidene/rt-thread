@@ -1,6 +1,7 @@
 #include <rtthread.h>
 #include "../../hyp/hyp_log.h"
 #include "../data_abort_helper.h"
+#include "../linux_vgic.h"
 #include "drivers/virt.h"
 #include "gicd_reg.h"
 
@@ -82,6 +83,7 @@ int linux_gicd_shadow_itargetsr_access(struct linux_stage2_trap_frame *tf, rt_ui
                 hyp_log_printf("[gicd_itargetsr][w] intid=%u cpu_mask=%x\n",
                                intid + i,
                                byte_value & GICD_TARGET_CPU_MASK);
+                linux_vgic_log_cpuif_state("after-target");
             }
 #endif
         }

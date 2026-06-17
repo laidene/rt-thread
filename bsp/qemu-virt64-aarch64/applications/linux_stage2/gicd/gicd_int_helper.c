@@ -121,7 +121,7 @@ void linux_gicd_shadow_init(void)
     linux_gicd_ctlr = 0;
 
     for (int i = 0; i < GICD_IGROUPR_COUNT; ++i) {
-        linux_gicd_igroupr[i] = 0xffffffffU;
+        linux_gicd_igroupr[i] = 0x00000000U;
     }
 
     for (int i = 0; i < LINUX_GUEST_VCPU_COUNT; ++i) {

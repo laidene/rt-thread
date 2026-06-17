@@ -34,6 +34,8 @@
     .extern hyp_log_exception
     .extern linux_stage2_abort
     .extern linux_secondary_entry
+    .extern linux_vgic_log_physical_irq
+    .extern linux_vgic_handle_physical_irq
 
 .text
 .align 11
@@ -312,6 +314,14 @@ hyp_current_serror:
     b       hyp_stop
 
 hyp_lower_irq:
+    save_linux_s2_tf
+    bl      linux_vgic_handle_physical_irq
+    cbnz    x0, hyp_lower_irq_unhandled
+    restore_linux_s2_tf
+    eret
+
+hyp_lower_irq_unhandled:
+    add     sp, sp, #LINUX_S2_TF_SIZE
     log_hyp_exception hyp_log_lower_irq
     b       hyp_stop
 

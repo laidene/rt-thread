@@ -9,7 +9,7 @@
 /* virtual board mem info */
 #define S2_LINUX_RAM_BASE    0x48000000UL
 #define S2_VIRTIO_BASE       0x0a000000UL
-#define S2_GICC_PA           0x08010000UL
+#define S2_GICV_PA           0x08040000UL
 #define S2_GICD_BASE         0x08000000UL
 #define S2_GICD_SIZE         0x00010000UL
 /* virtual board mem info */
@@ -122,12 +122,12 @@ static void linux_stage2_zero_tables(void)
     }
 }
 
-static void linux_stage2_map_gicc(void)
+static void linux_stage2_map_gicv(void)
 {
-    rt_uint64_t pa = S2_GICC_PA;
+    rt_uint64_t pa = S2_GICV_PA;
 
     /*
-     * Guest GICC IPA 0x08010000-0x0801ffff maps to real GICC.
+     * Guest GICC IPA 0x08010000-0x0801ffff maps to real GICV.
      * GICD is still trapped by stage-2, so Linux cannot overwrite
      * distributor state outside the shadow/whitelist path.
      * Guest GICD IPA 0x08000000 deliberately stays unmapped.
@@ -159,7 +159,7 @@ void linux_stage2_prepare(void)
     linux_stage2_l2_00000000_3fffffff[64] = (rt_uint64_t)linux_stage2_l3_08000000_081fffff | S2_DESC_TABLE;
     linux_stage2_l2_00000000_3fffffff[80] = S2_VIRTIO_BASE | S2_DEVICE_BLOCK_ATTR;
 
-    linux_stage2_map_gicc();
+    linux_stage2_map_gicv();
     linux_stage2_map_ram();
 
     hyp_clean_dcache(linux_stage2_l1_00000000_7fffffff, sizeof(linux_stage2_l1_00000000_7fffffff));

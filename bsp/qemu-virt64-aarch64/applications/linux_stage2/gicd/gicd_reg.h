@@ -53,7 +53,7 @@
 
 extern rt_uint64_t linux_gicd_real_base;
 
-extern rt_uint32_t linux_gicd_ctlr;;
+extern rt_uint32_t linux_gicd_ctlr;
 extern rt_uint32_t linux_gicd_igroupr       [GICD_IGROUPR_COUNT];
 
 extern rt_uint32_t linux_gicd_isenabler0    [LINUX_GUEST_VCPU_COUNT];    /* INTID 0..31, banked */
